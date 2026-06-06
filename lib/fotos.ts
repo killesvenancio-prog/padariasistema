@@ -36,6 +36,27 @@ const STOCK: Record<string, string> = {
   'Fanta 2L': '/produtos/fanta.jpg?v=2',
   'Sprite Lata': '/produtos/sprite.jpg?v=2',
   'Sprite 2L': '/produtos/sprite.jpg?v=2',
+  // Itens novos — fotos de bancos de imagem livre (Openverse: cc0/by/by-sa).
+  // Créditos em /creditos-fotos.txt. Troque por foto real no admin quando quiser.
+  'Croissant': '/produtos/ov-croissant.jpg',
+  'Risole': '/produtos/ov-risole.jpg',
+  'Pastel Frito': '/produtos/ov-pastel.jpg',
+  'Esfiha de Gergelim': '/produtos/ov-esfiha.jpg',
+  'Quibe': '/produtos/ov-quibe.jpg',
+  'Cachorro-quente': '/produtos/ov-cachorro-quente.jpg',
+  'Bauru': '/produtos/ov-bauru.jpg',
+  'Pão de Passas': '/produtos/ov-pao-passas.jpg',
+  'Pão Integral Fatiado': '/produtos/ov-pao-integral.jpg',
+  'Chipa (Rosquinha de Queijo)': '/produtos/ov-chipa.jpg',
+  'Sorvete a Granel': '/produtos/ov-sorvete.jpg',
+  'Torta / Bolo Fatiado': '/produtos/ov-torta-fatia.jpg',
+  'Pavê / Sobremesa no Pote': '/produtos/ov-pave.jpg',
+  'Bolo com Chantilly': '/produtos/ov-bolo-chantilly.jpg',
+  'Suco de Uva Integral Dallarosa': '/produtos/ov-suco-uva.jpg',
+  'Pizza LeBon Calabresa': '/produtos/ov-pizza.jpg',
+  'Pizza LeBon Frango com Requeijão': '/produtos/ov-pizza.jpg',
+  'Pizza LeBon Lombo com Requeijão': '/produtos/ov-pizza.jpg',
+  'Pizza Seara Gourmet Margherita': '/produtos/ov-pizza.jpg',
 }
 
 export function fotoDe(p: { nome: string; foto_url: string | null }): string | null {
