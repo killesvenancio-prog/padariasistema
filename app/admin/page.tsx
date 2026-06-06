@@ -6,7 +6,7 @@ import { useToast } from '@/components/Toast'
 import { formatarQuantidade } from '@/lib/format'
 import {
   LayoutDashboard, ClipboardList, CalendarDays, Package, Store, Lock, ImageIcon,
-  Search, Printer, Download, Bell, BellOff, AlertTriangle, X,
+  Search, Printer, Download, Bell, BellOff, AlertTriangle, X, RotateCcw, Loader2,
 } from 'lucide-react'
 
 interface ItemHoje {
@@ -179,6 +179,12 @@ export default function AdminPage() {
   const [catProduto, setCatProduto] = useState('Todas')
   const [som, setSom] = useState(true)
 
+  // Cardápio de hoje: busca, filtros e ações em massa
+  const [buscaCardapio, setBuscaCardapio] = useState('')
+  const [catCardapio, setCatCardapio] = useState('Todas')
+  const [filtroLigado, setFiltroLigado] = useState<'todos' | 'ligados' | 'desligados'>('todos')
+  const [bulkLoading, setBulkLoading] = useState(false)
+
   const [form, setForm] = useState(formVazio)
   const [formAberto, setFormAberto] = useState(false)
   const [salvando, setSalvando] = useState(false)
@@ -309,6 +315,70 @@ export default function AdminPage() {
   async function desligar(item: ItemHoje) {
     const { error } = await supabase.rpc('desligar_item_hoje', { p_produto_id: item.produto_id })
     setMsg(error ? `Erro: ${error.message}` : `${item.nome} desligado`)
+    await carregarItens()
+  }
+
+  // Lista de itens do cardápio aplicando busca + categoria + status (ligado/desligado)
+  function listaFiltradaCardapio(): ItemHoje[] {
+    const q = buscaCardapio.trim().toLowerCase()
+    return itensHoje.filter((it) => {
+      const okCat = catCardapio === 'Todas' || it.categoria === catCardapio
+      const okBusca = !q || it.nome.toLowerCase().includes(q)
+      const okLig = filtroLigado === 'todos' || (filtroLigado === 'ligados' ? it.ligado : !it.ligado)
+      return okCat && okBusca && okLig
+    })
+  }
+
+  // Liga todos os itens visíveis no filtro atual (usa a quantidade já definida).
+  async function ligarVisiveis() {
+    const alvo = listaFiltradaCardapio().filter((it) => !it.ligado)
+    if (alvo.length === 0) { setMsg('Nada para ligar no filtro atual.'); return }
+    setBulkLoading(true)
+    await Promise.all(alvo.map((it) =>
+      supabase.rpc('ligar_item_hoje', {
+        p_produto_id: it.produto_id,
+        p_quantidade: qtds[it.produto_id] ?? (it.unidade === 'kg' ? 5 : 20),
+      }),
+    ))
+    setBulkLoading(false)
+    setMsg(`${alvo.length} ${alvo.length === 1 ? 'item ligado' : 'itens ligados'}.`)
+    await carregarItens()
+  }
+
+  // Desliga todos os itens visíveis no filtro atual.
+  async function desligarVisiveis() {
+    const alvo = listaFiltradaCardapio().filter((it) => it.ligado)
+    if (alvo.length === 0) { setMsg('Nada para desligar no filtro atual.'); return }
+    setBulkLoading(true)
+    await Promise.all(alvo.map((it) => supabase.rpc('desligar_item_hoje', { p_produto_id: it.produto_id })))
+    setBulkLoading(false)
+    setMsg(`${alvo.length} ${alvo.length === 1 ? 'item desligado' : 'itens desligados'}.`)
+    await carregarItens()
+  }
+
+  // Repete o cardápio do dia anterior mais recente (liga os mesmos itens/quantidades).
+  async function repetirUltimoCardapio() {
+    setBulkLoading(true)
+    const hojeISO = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })).toLocaleDateString('en-CA')
+    const { data, error } = await supabase
+      .from('cardapio_dia')
+      .select('produto_id, quantidade, data')
+      .lt('data', hojeISO)
+      .eq('disponivel', true)
+      .order('data', { ascending: false })
+    const linhas = (data ?? []) as Array<{ produto_id: number; quantidade: number; data: string }>
+    if (error || linhas.length === 0) {
+      setMsg('Não encontrei um cardápio anterior para repetir.')
+      setBulkLoading(false)
+      return
+    }
+    const ultimaData = linhas[0].data
+    const doDia = linhas.filter((r) => r.data === ultimaData && Number(r.quantidade) > 0)
+    await Promise.all(doDia.map((r) =>
+      supabase.rpc('ligar_item_hoje', { p_produto_id: r.produto_id, p_quantidade: Number(r.quantidade) }),
+    ))
+    setBulkLoading(false)
+    setMsg(`Cardápio de ${new Date(ultimaData + 'T12:00:00').toLocaleDateString('pt-BR')} repetido — ${doDia.length} ${doDia.length === 1 ? 'item ligado' : 'itens ligados'}.`)
     await carregarItens()
   }
 
@@ -498,6 +568,9 @@ export default function AdminPage() {
   })
 
   const itensBaixos = itensHoje.filter(estoqueBaixo).length
+  const categoriasCardapio = Array.from(new Set(itensHoje.map((i) => i.categoria)))
+  const ligadosCount = itensHoje.filter((i) => i.ligado).length
+  const itensCardapioFiltrados = listaFiltradaCardapio()
 
   function exportarCSV() {
     if (pedidosHoje.length === 0) {
@@ -811,17 +884,87 @@ export default function AdminPage() {
         {/* ---------- ABA CARDÁPIO DE HOJE ---------- */}
         {aba === 'cardapio' && (
           <>
-            <p className="text-sm text-muted-foreground mb-4">
-              Ligue o que tem hoje e ajuste a quantidade. O que está desligado não aparece pro cliente.
-            </p>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <p className="text-sm text-muted-foreground">Ligue o que tem hoje. O cliente só vê o que está ligado.</p>
+              <span className="text-sm font-semibold whitespace-nowrap">{ligadosCount} de {itensHoje.length} ligados</span>
+            </div>
+
+            {/* Repetir cardápio + busca */}
+            <div className="flex gap-2 flex-wrap mt-3 mb-3">
+              <button
+                onClick={repetirUltimoCardapio}
+                disabled={bulkLoading}
+                className="inline-flex items-center gap-2 bg-primary text-primary-foreground rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-primary/90 disabled:opacity-50"
+                title="Liga os mesmos itens do último dia que você abriu"
+              >
+                <RotateCcw className="w-4 h-4" /> Repetir último cardápio
+              </button>
+              <div className="relative flex-1 min-w-[180px]">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                <input
+                  value={buscaCardapio}
+                  onChange={(e) => setBuscaCardapio(e.target.value)}
+                  placeholder="Buscar item..."
+                  className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+            </div>
+
+            {/* Filtro por categoria */}
+            <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1 mb-2">
+              {['Todas', ...categoriasCardapio].map((c) => (
+                <button
+                  key={c}
+                  onClick={() => setCatCardapio(c)}
+                  className={`shrink-0 rounded-full border px-3.5 py-1.5 text-sm font-medium transition ${
+                    catCardapio === c ? 'bg-primary text-primary-foreground border-primary' : 'bg-card text-foreground border-border hover:border-primary/40'
+                  }`}
+                >
+                  {c}
+                </button>
+              ))}
+            </div>
+
+            {/* Status + ações em massa */}
+            <div className="flex items-center gap-2 mb-4 flex-wrap">
+              <div className="flex rounded-lg border border-border overflow-hidden text-sm">
+                {(['todos', 'ligados', 'desligados'] as const).map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => setFiltroLigado(f)}
+                    className={`px-3 py-1.5 capitalize ${filtroLigado === f ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground hover:text-foreground'}`}
+                  >
+                    {f}
+                  </button>
+                ))}
+              </div>
+              <div className="flex gap-2 ml-auto">
+                <button onClick={ligarVisiveis} disabled={bulkLoading} className="text-sm bg-primary/10 text-primary border border-primary/30 rounded-lg px-3 py-1.5 font-medium disabled:opacity-50">Ligar visíveis</button>
+                <button onClick={desligarVisiveis} disabled={bulkLoading} className="text-sm border border-border rounded-lg px-3 py-1.5 disabled:opacity-50">Desligar visíveis</button>
+              </div>
+            </div>
+
+            {bulkLoading && (
+              <p className="text-sm text-muted-foreground mb-3 flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" /> Processando...
+              </p>
+            )}
+
             {itensBaixos > 0 && (
               <div className="mb-4 flex items-center gap-2 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl px-4 py-3 text-sm">
                 <AlertTriangle className="w-4 h-4 flex-shrink-0" />
                 {itensBaixos} {itensBaixos === 1 ? 'item está acabando' : 'itens estão acabando'} — reabasteça ou desligue.
               </div>
             )}
+
+            {itensCardapioFiltrados.length === 0 ? (
+              <div className="text-center py-14 text-muted-foreground">
+                <CalendarDays className="w-10 h-10 mx-auto mb-2 opacity-40" />
+                Nenhum item neste filtro.
+              </div>
+            ) : (
             <div className="grid gap-3 sm:grid-cols-2">
-              {itensHoje.map((item) => {
+              {itensCardapioFiltrados.map((item) => {
                 const baixo = estoqueBaixo(item)
                 return (
                 <div key={item.produto_id} className={`rounded-2xl border p-4 flex items-center gap-3 ${baixo ? 'bg-amber-50 border-amber-300 ring-1 ring-amber-200' : item.ligado ? 'bg-card border-border' : 'bg-muted/40 border-border'}`}>
@@ -858,6 +1001,7 @@ export default function AdminPage() {
                 )
               })}
             </div>
+            )}
           </>
         )}
 
