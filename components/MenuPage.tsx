@@ -7,13 +7,18 @@ import { useCart } from '@/contexts/CartContext'
 import { formatarPreco } from '@/lib/format'
 import type { Produto } from '@/types'
 import { CategorySection } from './CategorySection'
+import { ProductCard } from './ProductCard'
 import { CartButton } from './CartButton'
 import { ChatWidget } from './ChatWidget'
 import { ChatPanel } from './ChatPanel'
+import { BackToTop } from './BackToTop'
 import { slugCategoria, iconeCategoria } from '@/lib/categorias'
-import { MapPin, Clock, Camera, Store, Bot, AlertCircle, PackageOpen, Croissant, Heart, ShoppingBag } from 'lucide-react'
+import { MapPin, Clock, Camera, Store, Bot, AlertCircle, PackageOpen, Croissant, Heart, ShoppingBag, Search, X, ClipboardList, SearchX } from 'lucide-react'
 
 const categoriasOrdem = ['Pães', 'Doces', 'Salgados', 'Bebidas']
+
+const normalizar = (s: string) =>
+  s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 
 function calcularAberto(): boolean {
   const agora = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }))
@@ -49,6 +54,7 @@ export function MenuPage() {
   const [aberto, setAberto] = useState<boolean | null>(null)
   const [logoOk, setLogoOk] = useState(true)
   const [activeCat, setActiveCat] = useState('')
+  const [busca, setBusca] = useState('')
   const { totalItens, totalValor, temItensPesados } = useCart()
 
   useEffect(() => {
@@ -85,9 +91,15 @@ export function MenuPage() {
     (c) => (produtosPorCategoria[c] || []).length > 0,
   )
 
+  // Busca (sem acento/caixa) por nome, descrição ou categoria
+  const buscaNorm = normalizar(busca.trim())
+  const produtosFiltrados = buscaNorm
+    ? produtos.filter((p) => normalizar(`${p.nome} ${p.descricao ?? ''} ${p.categoria}`).includes(buscaNorm))
+    : []
+
   // Scroll-spy: destaca a categoria visível na barra fixa
   useEffect(() => {
-    if (produtos.length === 0) return
+    if (produtos.length === 0 || buscaNorm) return
     const secs = Array.from(document.querySelectorAll<HTMLElement>('section[data-cat]'))
     if (secs.length === 0) return
     setActiveCat(secs[0].id)
@@ -102,7 +114,7 @@ export function MenuPage() {
     )
     secs.forEach((s) => obs.observe(s))
     return () => obs.disconnect()
-  }, [produtos])
+  }, [produtos, buscaNorm])
 
   const temMenu = !isLoading && !error && produtos.length > 0
 
@@ -123,6 +135,30 @@ export function MenuPage() {
       <p className="text-foreground font-medium">O cardápio de hoje ainda não foi aberto</p>
       <p className="text-muted-foreground text-sm mt-1">Volte daqui a pouco!</p>
     </div>
+  ) : buscaNorm ? (
+    produtosFiltrados.length === 0 ? (
+      <div className="text-center py-16">
+        <SearchX className="w-12 h-12 mx-auto mb-3 text-muted-foreground" />
+        <p className="text-foreground font-medium">Nada encontrado para “{busca}”.</p>
+        <p className="text-muted-foreground text-sm mt-1">Tente outro nome ou veja o cardápio completo.</p>
+        <button onClick={() => setBusca('')} className="mt-4 inline-flex items-center gap-1.5 text-primary font-medium">
+          <X className="w-4 h-4" /> Limpar busca
+        </button>
+      </div>
+    ) : (
+      <section className="mb-10">
+        <div className="flex items-center gap-3 mb-4">
+          <h2 className="font-heading text-xl font-bold text-foreground">Resultados</h2>
+          <span className="text-xs font-semibold text-muted-foreground bg-muted rounded-full px-2 py-0.5">{produtosFiltrados.length}</span>
+          <div className="flex-1 h-px bg-border" />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+          {produtosFiltrados.map((produto) => (
+            <ProductCard key={produto.produto_id} produto={produto} />
+          ))}
+        </div>
+      </section>
+    )
   ) : (
     categoriasComItens.map((categoria) => (
       <CategorySection key={categoria} id={slugCategoria(categoria)} categoria={categoria} produtos={produtosPorCategoria[categoria] || []} />
@@ -170,6 +206,10 @@ export function MenuPage() {
               <Clock className="w-4 h-4 mt-0.5 flex-shrink-0 text-accent" />
               <span>Seg–Sex 6h30–19h30<br />Sáb/Dom/feriado 6h30–11h · 15h–19h30</span>
             </span>
+            <Link href="/pedidos" className="flex items-center gap-2 bg-white/[0.07] border border-white/10 rounded-xl px-3 py-2 text-[12.5px] text-white/85 hover:bg-white/10 transition">
+              <ClipboardList className="w-4 h-4 flex-shrink-0 text-accent" />
+              <span className="underline">Meus pedidos</span>
+            </Link>
             <a href="https://www.instagram.com/santaceciliapadaria/" target="_blank" rel="noreferrer" className="flex items-center gap-2 bg-white/[0.07] border border-white/10 rounded-xl px-3 py-2 text-[12.5px] text-white/85 hover:bg-white/10 transition">
               <Camera className="w-4 h-4 flex-shrink-0 text-accent" />
               <span className="underline">@santaceciliapadaria</span>
@@ -178,30 +218,56 @@ export function MenuPage() {
         </div>
       </header>
 
-      {/* Barra de categorias (fixa) */}
+      {/* Barra de busca + categorias (fixa) */}
       {temMenu && (
         <nav className="sticky top-0 z-30 bg-background/90 backdrop-blur-md border-b border-border">
-          <div className="max-w-7xl mx-auto px-3 flex items-center gap-3">
-            <div className="flex gap-2 overflow-x-auto no-scrollbar py-2.5 flex-1">
-              {categoriasComItens.map((cat) => {
-                const id = slugCategoria(cat)
-                const Icon = iconeCategoria(cat)
-                const ativo = activeCat === id
-                return (
-                  <a
-                    key={cat}
-                    href={`#${id}`}
-                    onClick={() => setActiveCat(id)}
-                    className={`shrink-0 inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm font-medium transition ${
-                      ativo ? 'bg-primary text-primary-foreground border-primary shadow-sm' : 'bg-card text-foreground border-border hover:border-primary/40'
-                    }`}
-                  >
-                    <Icon className="w-4 h-4" /> {cat}
-                    <span className={`text-xs ${ativo ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>{produtosPorCategoria[cat].length}</span>
-                  </a>
-                )
-              })}
+          <div className="max-w-7xl mx-auto px-3 flex items-center gap-2.5 py-2.5">
+            {/* Busca */}
+            <div className="relative flex-shrink-0 w-36 sm:w-64">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+              <input
+                type="text"
+                value={busca}
+                onChange={(e) => setBusca(e.target.value)}
+                placeholder="Buscar..."
+                aria-label="Buscar no cardápio"
+                className="w-full pl-9 pr-8 py-2 rounded-full border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+              {busca && (
+                <button onClick={() => setBusca('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" aria-label="Limpar busca">
+                  <X className="w-4 h-4" />
+                </button>
+              )}
             </div>
+
+            {/* Categorias (somem durante a busca) */}
+            {!buscaNorm ? (
+              <div className="flex gap-2 overflow-x-auto no-scrollbar flex-1">
+                {categoriasComItens.map((cat) => {
+                  const id = slugCategoria(cat)
+                  const Icon = iconeCategoria(cat)
+                  const ativo = activeCat === id
+                  return (
+                    <a
+                      key={cat}
+                      href={`#${id}`}
+                      onClick={() => setActiveCat(id)}
+                      className={`shrink-0 inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm font-medium transition ${
+                        ativo ? 'bg-primary text-primary-foreground border-primary shadow-sm' : 'bg-card text-foreground border-border hover:border-primary/40'
+                      }`}
+                    >
+                      <Icon className="w-4 h-4" /> {cat}
+                      <span className={`text-xs ${ativo ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>{produtosPorCategoria[cat].length}</span>
+                    </a>
+                  )
+                })}
+              </div>
+            ) : (
+              <span className="flex-1 text-sm text-muted-foreground truncate">
+                {produtosFiltrados.length} resultado{produtosFiltrados.length === 1 ? '' : 's'} para “{busca}”
+              </span>
+            )}
+
             {totalItens > 0 && (
               <Link
                 href="/carrinho"
@@ -242,8 +308,9 @@ export function MenuPage() {
             <a href="https://www.google.com/maps/search/?api=1&query=Padaria+Santa+Cecilia+Marechal+Floriano+Peixoto+226+Santo+Antonio+da+Patrulha" target="_blank" rel="noreferrer" className="inline-block mt-2 text-sm underline text-white/70 hover:text-white">Ver no mapa</a>
           </div>
           <div>
-            <h4 className="text-white font-semibold text-sm mb-3">Horário & contato</h4>
+            <h4 className="text-white font-semibold text-sm mb-3">Horário &amp; contato</h4>
             <p className="flex items-start gap-2 text-sm text-white/75"><Clock className="w-4 h-4 mt-0.5 flex-shrink-0 text-accent" /> Seg–Sex 6h30–19h30 · Sáb, Dom e feriados 6h30–11h e 15h–19h30</p>
+            <Link href="/pedidos" className="flex items-center gap-2 mt-2 text-sm underline text-white/70 hover:text-white"><ClipboardList className="w-4 h-4 text-accent" /> Meus pedidos</Link>
             <a href="https://www.instagram.com/santaceciliapadaria/" target="_blank" rel="noreferrer" className="flex items-center gap-2 mt-2 text-sm underline text-white/70 hover:text-white"><Camera className="w-4 h-4 text-accent" /> @santaceciliapadaria</a>
           </div>
         </div>
@@ -257,6 +324,7 @@ export function MenuPage() {
 
       <CartButton />
       <ChatWidget produtos={produtos} />
+      <BackToTop />
     </div>
   )
 }

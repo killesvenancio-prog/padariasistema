@@ -152,4 +152,65 @@ html {
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
+
+  /* Animações sutis (avisos e modal) */
+  .animate-toast-in {
+    animation: toast-in 0.22s ease-out;
+  }
+  .animate-fade-in {
+    animation: fade-in 0.18s ease-out;
+  }
+  .animate-sheet-up {
+    animation: sheet-up 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes sheet-up {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Impressão de comanda da cozinha: mostra só a área marcada */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .area-impressao,
+  .area-impressao * {
+    visibility: visible;
+  }
+  .area-impressao {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 0;
+  }
+  .nao-imprimir {
+    display: none !important;
+  }
 }

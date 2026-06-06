@@ -4,7 +4,9 @@ import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { useCart } from '@/contexts/CartContext'
+import { useToast } from '@/components/Toast'
 import { formatarQuantidade } from '@/lib/format'
+import { salvarPedidoLocal } from '@/lib/pedidosLocais'
 import type { ChatMessage, Produto } from '@/types'
 import { Send, Loader2 } from 'lucide-react'
 
@@ -23,6 +25,7 @@ interface Finalizar {
 
 export function ChatPanel({ produtos }: { produtos: Produto[] }) {
   const { itens, definirQuantidade, limparCarrinho } = useCart()
+  const { toast } = useToast()
   const router = useRouter()
   const [messages, setMessages] = useState<ChatMessage[]>([
     { role: 'assistant', content: 'Olá! Sou o atendente da Padaria Santa Cecília. Posso recomendar, montar e até fechar seu pedido — é só pedir, ex.: "quero 2 coxinhas e 300g de pão".' },
@@ -61,6 +64,13 @@ export function ChatPanel({ produtos }: { produtos: Produto[] }) {
     }
     const { data, error } = await supabase.rpc('criar_pedido', { payload })
     if (error) return `Não consegui fechar o pedido: ${error.message}`
+    salvarPedidoLocal({
+      id: data.pedido_id,
+      total: Number(data.total),
+      modo: d.modo,
+      data: new Date().toISOString(),
+    })
+    toast(`Pedido #${data.pedido_id} enviado!`)
     limparCarrinho()
     // Redireciona para a página de confirmação (igual ao fluxo manual do carrinho)
     setTimeout(() => {

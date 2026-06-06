@@ -8,6 +8,7 @@ import { formatarPreco } from '@/lib/format'
 import type { ModoPedido, PedidoPayload, PedidoResponse } from '@/types'
 import { CartItemList } from './CartItemList'
 import { OrderModeSelector } from './OrderModeSelector'
+import { salvarPedidoLocal } from '@/lib/pedidosLocais'
 import { ArrowLeft, Loader2, ShoppingBag } from 'lucide-react'
 import Link from 'next/link'
 
@@ -70,6 +71,12 @@ export function CartPage() {
       const { data, error: rpcError } = await supabase.rpc('criar_pedido', { payload })
       if (rpcError) throw new Error(rpcError.message)
       const response = data as PedidoResponse
+      salvarPedidoLocal({
+        id: response.pedido_id,
+        total: Number(response.total),
+        modo,
+        data: new Date().toISOString(),
+      })
       limparCarrinho()
       router.push(`/confirmacao?pedido_id=${response.pedido_id}&total=${response.total}&status=${response.status}`)
     } catch (err) {

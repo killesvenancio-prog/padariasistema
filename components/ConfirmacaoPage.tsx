@@ -2,14 +2,16 @@
 
 import { useSearchParams } from 'next/navigation'
 import { formatarPreco } from '@/lib/format'
-import { CheckCircle, ChefHat, ConciergeBell, Camera, Croissant } from 'lucide-react'
+import { StatusPedido } from '@/components/StatusPedido'
+import { CheckCircle, Camera, Croissant, ClipboardList } from 'lucide-react'
 import Link from 'next/link'
 
 export function ConfirmacaoPage() {
   const searchParams = useSearchParams()
   const pedidoId = searchParams.get('pedido_id')
   const total = searchParams.get('total')
-  const status = searchParams.get('status')
+  const statusInicial = searchParams.get('status') || 'recebido'
+  const id = pedidoId ? Number(pedidoId) : null
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
@@ -25,38 +27,30 @@ export function ConfirmacaoPage() {
           <h1 className="text-2xl font-bold text-foreground mb-2">Pedido #{pedidoId} recebido!</h1>
           <p className="text-muted-foreground mb-6">Já estamos cuidando do seu pedido. Obrigado pela preferência!</p>
 
-          <div className="bg-secondary rounded-2xl p-4 mb-6 text-left">
-            <div className="flex justify-between items-center mb-2">
+          {total && (
+            <div className="bg-secondary rounded-2xl p-4 mb-6 flex justify-between items-center">
               <span className="text-muted-foreground text-sm">Total</span>
-              <span className="text-xl font-bold text-primary">{formatarPreco(parseFloat(total || '0'))}</span>
+              <span className="text-xl font-bold text-primary">{formatarPreco(parseFloat(total))}</span>
             </div>
-            <div className="flex justify-between items-center">
-              <span className="text-muted-foreground text-sm">Status</span>
-              <span className="bg-primary/10 text-primary px-3 py-1 rounded-full text-sm font-medium capitalize">{status}</span>
-            </div>
-          </div>
+          )}
 
-          {/* Próximos passos */}
-          <div className="flex items-center justify-between gap-1 mb-6 text-[11px] text-muted-foreground">
-            <div className="flex-1 flex flex-col items-center gap-1">
-              <span className="w-9 h-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center"><CheckCircle className="w-4 h-4" /></span>
-              Recebido
-            </div>
-            <div className="h-px w-6 bg-border" />
-            <div className="flex-1 flex flex-col items-center gap-1">
-              <span className="w-9 h-9 rounded-full bg-muted text-muted-foreground flex items-center justify-center"><ChefHat className="w-4 h-4" /></span>
-              Em preparo
-            </div>
-            <div className="h-px w-6 bg-border" />
-            <div className="flex-1 flex flex-col items-center gap-1">
-              <span className="w-9 h-9 rounded-full bg-muted text-muted-foreground flex items-center justify-center"><ConciergeBell className="w-4 h-4" /></span>
-              Pronto
-            </div>
-          </div>
+          {/* Acompanhamento ao vivo */}
+          {id != null && <StatusPedido id={id} statusInicial={statusInicial} />}
 
-          <Link href="/" className="block w-full bg-primary text-primary-foreground font-semibold py-3 px-6 rounded-xl hover:bg-primary/90 transition-colors">
-            Voltar ao cardápio
-          </Link>
+          <div className="mt-7 space-y-2.5">
+            <Link
+              href="/pedidos"
+              className="flex items-center justify-center gap-2 w-full bg-primary text-primary-foreground font-semibold py-3 px-6 rounded-xl hover:bg-primary/90 transition-colors"
+            >
+              <ClipboardList className="w-4 h-4" /> Acompanhar meus pedidos
+            </Link>
+            <Link
+              href="/"
+              className="block w-full border border-border text-foreground font-medium py-3 px-6 rounded-xl hover:bg-secondary transition-colors"
+            >
+              Voltar ao cardápio
+            </Link>
+          </div>
         </div>
 
         <a href="https://www.instagram.com/santaceciliapadaria/" target="_blank" rel="noreferrer" className="flex items-center justify-center gap-1.5 mt-4 text-sm text-muted-foreground hover:text-primary transition-colors">

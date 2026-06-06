@@ -1,8 +1,10 @@
 'use client'
 
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
 import type { Produto, ItemCarrinho } from '@/types'
 import { passoDe } from '@/lib/format'
+
+const STORAGE_KEY = 'padaria_carrinho'
 
 function round3(n: number) {
   return Math.round(n * 1000) / 1000
@@ -29,6 +31,31 @@ const CartContext = createContext<CartContextType | undefined>(undefined)
 
 export function CartProvider({ children }: { children: ReactNode }) {
   const [itens, setItens] = useState<ItemCarrinho[]>([])
+  const [hidratado, setHidratado] = useState(false)
+
+  // Carrega o carrinho salvo no aparelho (não some ao recarregar a página).
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY)
+      if (raw) {
+        const arr = JSON.parse(raw)
+        if (Array.isArray(arr)) setItens(arr as ItemCarrinho[])
+      }
+    } catch {
+      /* ignora */
+    }
+    setHidratado(true)
+  }, [])
+
+  // Salva sempre que o carrinho muda (só depois de hidratar, pra não apagar o salvo).
+  useEffect(() => {
+    if (!hidratado) return
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(itens))
+    } catch {
+      /* ignora */
+    }
+  }, [itens, hidratado])
 
   const adicionarItem = useCallback((produto: Produto, modo: 'un' | 'kg') => {
     const passo = passoDe(modo)
