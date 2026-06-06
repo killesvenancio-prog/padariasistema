@@ -1,4 +1,7 @@
-import { Croissant, CakeSlice, ChefHat, CupSoda, Utensils, type LucideIcon } from 'lucide-react'
+import {
+  Croissant, CakeSlice, ChefHat, CupSoda, Cookie, Candy, Snowflake,
+  ShoppingBasket, Wine, Cigarette, Utensils, type LucideIcon,
+} from 'lucide-react'
 
 // "Pães" -> "cat-paes" (sem acento/espaço) — usado como id de seção e âncora
 export function slugCategoria(c: string): string {
@@ -14,10 +17,18 @@ export function slugCategoria(c: string): string {
 }
 
 const ICONES: Record<string, LucideIcon> = {
-  Pães: Croissant,
-  Doces: CakeSlice,
-  Salgados: ChefHat,
-  Bebidas: CupSoda,
+  'Pães': Croissant,
+  'Confeitaria': CakeSlice,
+  'Doces': CakeSlice,
+  'Doces coloniais': Candy,
+  'Chocolates': Cookie,
+  'Salgados': ChefHat,
+  'Salgadinhos': Cookie,
+  'Congelados': Snowflake,
+  'Mercearia': ShoppingBasket,
+  'Bebidas': CupSoda,
+  'Vinhos': Wine,
+  'Cigarros': Cigarette,
 }
 
 export function iconeCategoria(c: string): LucideIcon {

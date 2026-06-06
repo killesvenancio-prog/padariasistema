@@ -15,7 +15,7 @@ import { BackToTop } from './BackToTop'
 import { slugCategoria, iconeCategoria } from '@/lib/categorias'
 import { MapPin, Clock, Camera, Store, Bot, AlertCircle, PackageOpen, Croissant, Heart, ShoppingBag, Search, X, ClipboardList, SearchX } from 'lucide-react'
 
-const categoriasOrdem = ['Pães', 'Doces', 'Salgados', 'Bebidas']
+const categoriasOrdem = ['Pães', 'Confeitaria', 'Doces', 'Doces coloniais', 'Chocolates', 'Salgados', 'Salgadinhos', 'Congelados', 'Mercearia', 'Bebidas', 'Vinhos', 'Cigarros']
 
 const normalizar = (s: string) =>
   s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()

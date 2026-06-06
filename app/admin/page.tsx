@@ -74,7 +74,7 @@ function labelModo(p: PedidoAdmin): string {
   return 'Retirada no balcão'
 }
 
-const CATEGORIAS = ['Pães', 'Doces', 'Salgados', 'Bebidas']
+const CATEGORIAS = ['Pães', 'Confeitaria', 'Doces', 'Doces coloniais', 'Chocolates', 'Salgados', 'Salgadinhos', 'Congelados', 'Mercearia', 'Bebidas', 'Vinhos', 'Cigarros']
 
 // "Estoque baixo": <= 1 kg (peso) ou <= 5 un.
 function estoqueBaixo(it: ItemHoje): boolean {
