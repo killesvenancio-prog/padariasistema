@@ -6,8 +6,9 @@ import { useCart } from '@/contexts/CartContext'
 import { useToast } from '@/components/Toast'
 import { formatarPreco, formatarQuantidade } from '@/lib/format'
 import { fotoDe } from '@/lib/fotos'
+import { iconeCategoria } from '@/lib/categorias'
 import { ProductModal } from './ProductModal'
-import { Plus, Minus, Scale, Utensils } from 'lucide-react'
+import { Plus, Minus, Scale } from 'lucide-react'
 
 const PESOS = [0.1, 0.25, 0.5, 1]
 
@@ -30,6 +31,7 @@ export function ProductCard({ produto }: ProductCardProps) {
   const semEstoque = produto.quantidade <= 0
   const noCarrinhoAtivo = noCarrinho > 0
   const imgSrc = !imgErro ? fotoDe(produto) : null
+  const CatIcon = iconeCategoria(produto.categoria)
 
   function escolherModo(peso: boolean) {
     if (item) removerItem(produto.produto_id)
@@ -59,7 +61,7 @@ export function ProductCard({ produto }: ProductCardProps) {
               className={`w-full h-full object-cover transition-transform duration-300 group-hover:scale-105 ${semEstoque ? 'grayscale opacity-60' : ''}`}
             />
           ) : (
-            <Utensils className="w-8 h-8 text-muted-foreground" />
+            <CatIcon className="w-10 h-10 text-primary/35" />
           )}
           {semEstoque && (
             <span className="absolute inset-x-0 bottom-0 bg-foreground/80 text-white text-[11px] font-semibold text-center py-1">Esgotado</span>

@@ -3,7 +3,8 @@
 import { useCart, ehAPesar } from '@/contexts/CartContext'
 import { formatarPreco, formatarQuantidade, passoDe } from '@/lib/format'
 import { fotoDe } from '@/lib/fotos'
-import { Plus, Minus, Trash2, Utensils, ShoppingCart } from 'lucide-react'
+import { iconeCategoria } from '@/lib/categorias'
+import { Plus, Minus, Trash2, ShoppingCart } from 'lucide-react'
 
 export function CartItemList() {
   const { itens, atualizarQuantidade, removerItem } = useCart()
@@ -23,6 +24,7 @@ export function CartItemList() {
         const passo = passoDe(item.modo)
         const pesar = ehAPesar(item)
         const foto = fotoDe(item.produto)
+        const CatIcon = iconeCategoria(item.produto.categoria)
         return (
           <div
             key={item.produto.produto_id}
@@ -33,7 +35,7 @@ export function CartItemList() {
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={foto} alt={item.produto.nome} className="w-full h-full object-cover" />
               ) : (
-                <Utensils className="w-5 h-5 text-muted-foreground" />
+                <CatIcon className="w-6 h-6 text-primary/40" />
               )}
             </div>
             <div className="flex-1 min-w-0">

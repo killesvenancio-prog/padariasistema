@@ -7,7 +7,7 @@ import { useToast } from '@/components/Toast'
 import { formatarPreco, formatarQuantidade } from '@/lib/format'
 import { fotoDe } from '@/lib/fotos'
 import { iconeCategoria } from '@/lib/categorias'
-import { X, Plus, Minus, Scale, Utensils } from 'lucide-react'
+import { X, Plus, Minus, Scale } from 'lucide-react'
 
 const PESOS = [0.1, 0.25, 0.5, 1]
 
@@ -61,7 +61,7 @@ export function ProductModal({ produto, onClose }: { produto: Produto; onClose: 
               className={`w-full h-full object-cover ${semEstoque ? 'grayscale opacity-70' : ''}`}
             />
           ) : (
-            <Utensils className="w-16 h-16 text-muted-foreground" />
+            <CatIcon className="w-16 h-16 text-primary/30" />
           )}
           <button
             onClick={onClose}
