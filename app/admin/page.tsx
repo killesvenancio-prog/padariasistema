@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/components/Toast'
 import { formatarQuantidade } from '@/lib/format'
+import { comprimirImagem, tipoDaImagem } from '@/lib/imagem'
 import {
   LayoutDashboard, ClipboardList, CalendarDays, Package, Store, Lock, ImageIcon,
   Search, Printer, Download, Bell, BellOff, AlertTriangle, X, RotateCcw, Loader2,
@@ -428,11 +429,13 @@ export default function AdminPage() {
 
   async function handleUpload(file: File) {
     setUploadando(true)
-    const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
+    // Comprime no navegador antes de enviar (deixa o upload rápido).
+    const otimizada = await comprimirImagem(file)
+    const { ext, contentType } = tipoDaImagem(otimizada, file.name)
     const path = `produto-${Date.now()}.${ext}`
     const { error } = await supabase.storage
       .from('produtos')
-      .upload(path, file, { upsert: true, cacheControl: '3600' })
+      .upload(path, otimizada, { upsert: true, cacheControl: '3600', contentType })
     setUploadando(false)
     if (error) {
       setMsg('Erro no upload da foto: ' + error.message)
@@ -459,17 +462,23 @@ export default function AdminPage() {
       foto_url: form.foto_url || null,
     }
     const res = form.id
-      ? await supabase.from('produtos').update(payload).eq('id', form.id)
-      : await supabase.from('produtos').insert(payload)
+      ? await supabase.from('produtos').update(payload).eq('id', form.id).select().single()
+      : await supabase.from('produtos').insert(payload).select().single()
     setSalvando(false)
     if (res.error) {
       setMsg('Erro ao salvar: ' + res.error.message)
       return
     }
+    // Atualiza a lista localmente (sem recarregar tudo -> instantâneo)
+    const salvo = res.data as ProdutoAdmin
+    setProdutos((prev) => {
+      const semEle = prev.filter((p) => p.id !== salvo.id)
+      return [...semEle, salvo].sort((a, b) => a.categoria.localeCompare(b.categoria) || a.nome.localeCompare(b.nome))
+    })
     setMsg(form.id ? 'Produto atualizado' : 'Produto criado')
     setFormAberto(false)
-    await carregarProdutos()
-    await carregarItens()
+    // Atualiza a aba "Cardápio de Hoje" em segundo plano (não trava o salvar).
+    carregarItens()
   }
 
   async function alternarAtivo(p: ProdutoAdmin) {
@@ -1045,7 +1054,7 @@ export default function AdminPage() {
                     <div className="w-14 h-14 rounded-lg overflow-hidden bg-secondary/50 flex items-center justify-center flex-shrink-0">
                       {p.foto_url ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={p.foto_url} alt={p.nome} className="w-full h-full object-cover" />
+                        <img src={p.foto_url} alt={p.nome} loading="lazy" className="w-full h-full object-cover" />
                       ) : (
                         <Package className="w-6 h-6 text-muted-foreground" />
                       )}

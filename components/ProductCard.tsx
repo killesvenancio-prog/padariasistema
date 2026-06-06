@@ -58,6 +58,7 @@ export function ProductCard({ produto }: ProductCardProps) {
               src={imgSrc}
               alt={produto.nome}
               onError={() => setImgErro(true)}
+              loading="lazy"
               className={`w-full h-full object-cover transition-transform duration-300 group-hover:scale-105 ${semEstoque ? 'grayscale opacity-60' : ''}`}
             />
           ) : (
