@@ -22,10 +22,11 @@ const normalizar = (s: string) =>
 
 function calcularAberto(): boolean {
   const agora = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }))
-  const dia = agora.getDay()
+  const dia = agora.getDay() // 0 = domingo
   const min = agora.getHours() * 60 + agora.getMinutes()
-  if (dia >= 1 && dia <= 5) return min >= 390 && min <= 1170
-  return (min >= 390 && min <= 660) || (min >= 900 && min <= 1170)
+  if (dia === 0) return false // Domingo: fechado
+  if (dia >= 1 && dia <= 5) return min >= 390 && min <= 1170 // Seg–Sex 6h30–19h30
+  return (min >= 390 && min <= 660) || (min >= 900 && min <= 1170) // Sábado 6h30–11h e 15h–19h30
 }
 
 function SkeletonList() {
@@ -204,7 +205,7 @@ export function MenuPage() {
             </span>
             <span className="flex items-start gap-2 bg-white/[0.07] border border-white/10 rounded-xl px-3 py-2 text-[12.5px] text-white/85">
               <Clock className="w-4 h-4 mt-0.5 flex-shrink-0 text-accent" />
-              <span>Seg–Sex 6h30–19h30<br />Sáb/Dom/feriado 6h30–11h · 15h–19h30</span>
+              <span>Seg–Sex 6h30–19h30<br />Sáb 6h30–11h · 15h–19h30 · Dom fechado</span>
             </span>
             <Link href="/pedidos" className="flex items-center gap-2 bg-white/[0.07] border border-white/10 rounded-xl px-3 py-2 text-[12.5px] text-white/85 hover:bg-white/10 transition">
               <ClipboardList className="w-4 h-4 flex-shrink-0 text-accent" />
@@ -309,7 +310,7 @@ export function MenuPage() {
           </div>
           <div>
             <h4 className="text-white font-semibold text-sm mb-3">Horário &amp; contato</h4>
-            <p className="flex items-start gap-2 text-sm text-white/75"><Clock className="w-4 h-4 mt-0.5 flex-shrink-0 text-accent" /> Seg–Sex 6h30–19h30 · Sáb, Dom e feriados 6h30–11h e 15h–19h30</p>
+            <p className="flex items-start gap-2 text-sm text-white/75"><Clock className="w-4 h-4 mt-0.5 flex-shrink-0 text-accent" /> Seg–Sex 6h30–19h30 · Sáb 6h30–11h e 15h–19h30 · Domingo fechado</p>
             <Link href="/pedidos" className="flex items-center gap-2 mt-2 text-sm underline text-white/70 hover:text-white"><ClipboardList className="w-4 h-4 text-accent" /> Meus pedidos</Link>
             <a href="https://www.instagram.com/santaceciliapadaria/" target="_blank" rel="noreferrer" className="flex items-center gap-2 mt-2 text-sm underline text-white/70 hover:text-white"><Camera className="w-4 h-4 text-accent" /> @santaceciliapadaria</a>
           </div>
