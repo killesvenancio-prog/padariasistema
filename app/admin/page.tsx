@@ -7,7 +7,7 @@ import { formatarQuantidade } from '@/lib/format'
 import { comprimirImagem, tipoDaImagem } from '@/lib/imagem'
 import {
   LayoutDashboard, ClipboardList, CalendarDays, Package, Store, Lock, ImageIcon,
-  Search, Printer, Download, Bell, BellOff, AlertTriangle, X, RotateCcw, Loader2,
+  Search, Printer, Download, Bell, BellOff, AlertTriangle, X, RotateCcw, Loader2, Plus,
 } from 'lucide-react'
 
 interface ItemHoje {
@@ -185,6 +185,14 @@ export default function AdminPage() {
   const [catCardapio, setCatCardapio] = useState('Todas')
   const [filtroLigado, setFiltroLigado] = useState<'todos' | 'ligados' | 'desligados'>('todos')
   const [bulkLoading, setBulkLoading] = useState(false)
+
+  // Adicionar vários itens de uma vez (bolos/mousses do dia etc.)
+  const [varAberto, setVarAberto] = useState(false)
+  const [varTexto, setVarTexto] = useState('')
+  const [varCat, setVarCat] = useState('Confeitaria')
+  const [varUnidade, setVarUnidade] = useState<'un' | 'kg'>('un')
+  const [varQtd, setVarQtd] = useState('10')
+  const [varSalvando, setVarSalvando] = useState(false)
 
   const [form, setForm] = useState(formVazio)
   const [formAberto, setFormAberto] = useState(false)
@@ -380,6 +388,40 @@ export default function AdminPage() {
     ))
     setBulkLoading(false)
     setMsg(`Cardápio de ${new Date(ultimaData + 'T12:00:00').toLocaleDateString('pt-BR')} repetido — ${doDia.length} ${doDia.length === 1 ? 'item ligado' : 'itens ligados'}.`)
+    await carregarItens()
+  }
+
+  // Cria vários produtos de uma vez (1 por linha "Nome - preço") e liga todos hoje.
+  async function adicionarVariosHoje() {
+    const linhas = varTexto.split('\n').map((l) => l.trim()).filter(Boolean)
+    if (linhas.length === 0) { setMsg('Escreva pelo menos um item.'); return }
+    const qtd = Math.max(0, Number(varQtd) || 0)
+    setVarSalvando(true)
+    // Tira o preço do fim da linha (opcional); o resto é o nome.
+    const itensParse = linhas
+      .map((linha) => {
+        const m = linha.match(/(\d+(?:[.,]\d{1,2})?)\s*$/)
+        let preco = 0
+        let nome = linha
+        if (m && (m.index ?? 0) > 0) {
+          preco = Number(m[1].replace(',', '.')) || 0
+          nome = linha.slice(0, m.index).replace(/[\s\-–—:R$]+$/i, '').trim()
+        }
+        return { nome: nome || linha, preco }
+      })
+      .filter((x) => x.nome)
+    const inseridos = await Promise.all(
+      itensParse.map((it) =>
+        supabase.from('produtos').insert({ nome: it.nome, preco: it.preco, categoria: varCat, unidade: varUnidade, ativo: true }).select().single(),
+      ),
+    )
+    const validos = inseridos.filter((r) => !r.error && r.data).map((r) => r.data as ProdutoAdmin)
+    await Promise.all(validos.map((p) => supabase.rpc('ligar_item_hoje', { p_produto_id: p.id, p_quantidade: qtd })))
+    setVarSalvando(false)
+    setVarAberto(false)
+    setVarTexto('')
+    setMsg(`${validos.length} ${validos.length === 1 ? 'item adicionado' : 'itens adicionados'} ao cardápio de hoje.`)
+    await carregarProdutos()
     await carregarItens()
   }
 
@@ -908,6 +950,14 @@ export default function AdminPage() {
               >
                 <RotateCcw className="w-4 h-4" /> Repetir último cardápio
               </button>
+              <button
+                onClick={() => setVarAberto(true)}
+                disabled={bulkLoading}
+                className="inline-flex items-center gap-2 border border-primary/40 text-primary rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-primary/10 disabled:opacity-50"
+                title="Adicionar vários itens (bolos, mousses do dia...) de uma vez"
+              >
+                <Plus className="w-4 h-4" /> Adicionar vários
+              </button>
               <div className="relative flex-1 min-w-[180px]">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
                 <input
@@ -1172,6 +1222,65 @@ export default function AdminPage() {
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* ---------- ADICIONAR VÁRIOS (bolos/mousses do dia) ---------- */}
+      {varAberto && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={() => setVarAberto(false)}>
+          <div onClick={(e) => e.stopPropagation()} className="bg-background w-full max-w-md rounded-t-2xl sm:rounded-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between">
+              <h2 className="font-heading font-bold text-lg">Adicionar vários de hoje</h2>
+              <button type="button" onClick={() => setVarAberto(false)} className="text-muted-foreground text-xl">✕</button>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Um item por linha, com o preço no fim. Ex.:<br />
+              <span className="text-foreground">Bolo de chocolate - 8,00</span>
+            </p>
+            <textarea
+              value={varTexto}
+              onChange={(e) => setVarTexto(e.target.value)}
+              rows={7}
+              placeholder={'Bolo de chocolate - 8,00\nMousse de maracujá - 6,50\nTorta de limão - 9,00'}
+              className="w-full border rounded-xl px-3 py-2.5 bg-card text-sm"
+            />
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <label className="text-sm font-medium">Categoria</label>
+                <select value={varCat} onChange={(e) => setVarCat(e.target.value)} className="w-full border rounded-xl px-3 py-2.5 bg-card mt-1">
+                  {CATEGORIAS.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div className="w-28">
+                <label className="text-sm font-medium">Qtd. cada</label>
+                <input type="number" min={0} value={varQtd} onChange={(e) => setVarQtd(e.target.value)} className="w-full border rounded-xl px-3 py-2.5 bg-card mt-1" />
+              </div>
+            </div>
+            <div>
+              <label className="text-sm font-medium">Vendido por</label>
+              <div className="flex gap-2 mt-1">
+                {([['un', 'Unidade'], ['kg', 'Peso (kg)']] as const).map(([val, label]) => (
+                  <button
+                    key={val}
+                    type="button"
+                    onClick={() => setVarUnidade(val)}
+                    className={`flex-1 rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors ${varUnidade === val ? 'bg-primary text-primary-foreground border-primary' : 'border-border bg-card'}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Eles entram no cardápio de hoje na hora. Quando não vender mais, é só desativar em Produtos — não polui o catálogo.
+            </p>
+            <div className="flex gap-3 pt-1">
+              <button type="button" onClick={() => setVarAberto(false)} className="flex-1 border border-border rounded-xl py-3 font-medium">Cancelar</button>
+              <button type="button" onClick={adicionarVariosHoje} disabled={varSalvando} className="flex-1 bg-primary text-primary-foreground rounded-xl py-3 font-medium disabled:opacity-50">
+                {varSalvando ? 'Adicionando...' : 'Adicionar ao cardápio'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
