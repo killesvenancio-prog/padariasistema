@@ -79,7 +79,7 @@ html {
   --chart-3: oklch(0.65 0.12 40);
   --chart-4: oklch(0.50 0.10 35);
   --chart-5: oklch(0.70 0.08 40);
-  --radius: 0.7rem;
+  --radius: 0.4rem;
   --sidebar: oklch(0.98 0.004 40);
   --sidebar-foreground: oklch(0.26 0.035 35);
   --sidebar-primary: oklch(0.55 0.19 33);
