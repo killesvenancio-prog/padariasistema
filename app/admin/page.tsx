@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback, memo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/components/Toast'
 import { formatarQuantidade } from '@/lib/format'
@@ -8,7 +8,7 @@ import { comprimirImagem, tipoDaImagem } from '@/lib/imagem'
 import { listarModelos, salvarModelo, removerModelo, type ModeloCardapio } from '@/lib/modelosCardapio'
 import {
   LayoutDashboard, ClipboardList, CalendarDays, Package, Store, Lock, ImageIcon,
-  Search, Printer, Download, Bell, BellOff, AlertTriangle, X, RotateCcw, Loader2, Plus, Save,
+  Search, Printer, Download, Bell, BellOff, AlertTriangle, X, RotateCcw, Loader2, Plus, Save, Table,
 } from 'lucide-react'
 
 interface ItemHoje {
@@ -158,6 +158,46 @@ const formVazio = {
   foto_url: null as string | null,
 }
 
+// Linha editável da aba "Tabela" (preço pode ficar string durante a edição).
+type LinhaProduto = Omit<ProdutoAdmin, 'preco'> & { preco: number | string }
+
+const LinhaTabela = memo(function LinhaTabela({
+  p,
+  onChange,
+}: {
+  p: LinhaProduto
+  onChange: (id: number, campo: keyof LinhaProduto, valor: string | number | boolean) => void
+}) {
+  const cel = 'w-full border border-transparent hover:border-border focus:border-primary rounded px-2 py-1 bg-transparent focus:bg-card text-sm outline-none'
+  return (
+    <tr className={`border-b border-border ${p.ativo ? '' : 'opacity-50'}`}>
+      <td className="p-1">
+        <input value={p.nome} onChange={(e) => onChange(p.id, 'nome', e.target.value)} className={`${cel} min-w-[150px] font-medium`} />
+      </td>
+      <td className="p-1">
+        <input value={p.descricao ?? ''} onChange={(e) => onChange(p.id, 'descricao', e.target.value)} placeholder="—" className={`${cel} min-w-[160px] text-muted-foreground`} />
+      </td>
+      <td className="p-1">
+        <select value={p.categoria} onChange={(e) => onChange(p.id, 'categoria', e.target.value)} className="border border-border rounded px-1.5 py-1 bg-card text-sm">
+          {CATEGORIAS.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+      </td>
+      <td className="p-1">
+        <select value={p.unidade} onChange={(e) => onChange(p.id, 'unidade', e.target.value)} className="border border-border rounded px-1.5 py-1 bg-card text-sm">
+          <option value="un">un</option>
+          <option value="kg">kg</option>
+        </select>
+      </td>
+      <td className="p-1">
+        <input type="number" step="0.01" min="0" value={p.preco} onChange={(e) => onChange(p.id, 'preco', e.target.value)} className="w-20 border border-border rounded px-1.5 py-1 bg-card text-sm text-right" />
+      </td>
+      <td className="p-1 text-center">
+        <input type="checkbox" checked={p.ativo} onChange={(e) => onChange(p.id, 'ativo', e.target.checked)} className="w-4 h-4" />
+      </td>
+    </tr>
+  )
+})
+
 export default function AdminPage() {
   const { toast } = useToast()
   const [carregando, setCarregando] = useState(true)
@@ -167,7 +207,7 @@ export default function AdminPage() {
   const [senha, setSenha] = useState('')
   const [erroLogin, setErroLogin] = useState<string | null>(null)
 
-  const [aba, setAba] = useState<'resumo' | 'pedidos' | 'cardapio' | 'produtos'>('resumo')
+  const [aba, setAba] = useState<'resumo' | 'pedidos' | 'cardapio' | 'produtos' | 'tabela'>('resumo')
   const [itensHoje, setItensHoje] = useState<ItemHoje[]>([])
   const [qtds, setQtds] = useState<Record<number, number>>({})
   const [produtos, setProdutos] = useState<ProdutoAdmin[]>([])
@@ -198,6 +238,11 @@ export default function AdminPage() {
   // Modelos de cardápio salvos
   const [modelos, setModelos] = useState<ModeloCardapio[]>([])
 
+  // Aba "Tabela" (edição em massa)
+  const [tabela, setTabela] = useState<LinhaProduto[]>([])
+  const [dirty, setDirty] = useState<Set<number>>(new Set())
+  const [buscaTabela, setBuscaTabela] = useState('')
+
   const [form, setForm] = useState(formVazio)
   const [formAberto, setFormAberto] = useState(false)
   const [salvando, setSalvando] = useState(false)
@@ -221,6 +266,49 @@ export default function AdminPage() {
     }
     setModelos(listarModelos())
   }, [])
+
+  // Mantém a tabela editável em sincronia com o catálogo carregado.
+  useEffect(() => {
+    setTabela(produtos.map((p) => ({ ...p })))
+    setDirty(new Set())
+  }, [produtos])
+
+  const onChangeLinha = useCallback((id: number, campo: keyof LinhaProduto, valor: string | number | boolean) => {
+    setTabela((prev) => prev.map((p) => (p.id === id ? { ...p, [campo]: valor } : p)))
+    setDirty((prev) => {
+      const n = new Set(prev)
+      n.add(id)
+      return n
+    })
+  }, [])
+
+  async function salvarTabela() {
+    const mudados = tabela.filter((p) => dirty.has(p.id))
+    if (mudados.length === 0) {
+      setMsg('Nada alterado para salvar.')
+      return
+    }
+    setBulkLoading(true)
+    await Promise.all(
+      mudados.map((p) =>
+        supabase
+          .from('produtos')
+          .update({
+            nome: String(p.nome).trim(),
+            descricao: p.descricao ? String(p.descricao).trim() : null,
+            preco: Number(String(p.preco).replace(',', '.')) || 0,
+            categoria: p.categoria,
+            unidade: p.unidade,
+            ativo: p.ativo,
+          })
+          .eq('id', p.id),
+      ),
+    )
+    setBulkLoading(false)
+    setMsg(`${mudados.length} ${mudados.length === 1 ? 'produto salvo' : 'produtos salvos'}.`)
+    await carregarProdutos()
+    await carregarItens()
+  }
 
   // atualiza os pedidos sozinho enquanto a aba Pedidos ou Resumo está aberta
   useEffect(() => {
@@ -669,6 +757,9 @@ export default function AdminPage() {
   const categoriasCardapio = Array.from(new Set(itensHoje.map((i) => i.categoria)))
   const ligadosCount = itensHoje.filter((i) => i.ligado).length
   const itensCardapioFiltrados = listaFiltradaCardapio()
+  const qTab = buscaTabela.trim().toLowerCase()
+  const tabelaFiltrada = qTab ? tabela.filter((p) => p.nome.toLowerCase().includes(qTab) || p.categoria.toLowerCase().includes(qTab)) : tabela
+  const qtdMudados = dirty.size
 
   function exportarCSV() {
     if (pedidosHoje.length === 0) {
@@ -707,7 +798,7 @@ export default function AdminPage() {
           </div>
         </div>
         <nav className="flex md:flex-col gap-1 p-3 md:flex-1 overflow-x-auto">
-          {([['resumo', 'Resumo', LayoutDashboard], ['pedidos', 'Pedidos', ClipboardList], ['cardapio', 'Cardápio de Hoje', CalendarDays], ['produtos', 'Produtos', Package]] as const).map(([id, label, Icon]) => (
+          {([['resumo', 'Resumo', LayoutDashboard], ['pedidos', 'Pedidos', ClipboardList], ['cardapio', 'Cardápio de Hoje', CalendarDays], ['tabela', 'Tabela', Table], ['produtos', 'Produtos', Package]] as const).map(([id, label, Icon]) => (
             <button
               key={id}
               onClick={() => setAba(id)}
@@ -1200,6 +1291,74 @@ export default function AdminPage() {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ---------- ABA TABELA (edição em massa) ---------- */}
+        {aba === 'tabela' && (
+          <>
+            <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
+              <div>
+                <h2 className="font-heading text-xl font-bold">Tabela de produtos</h2>
+                <p className="text-sm text-muted-foreground">Edite tudo de uma vez. As mudanças só vão pro banco quando você clicar em salvar.</p>
+              </div>
+              <button
+                onClick={salvarTabela}
+                disabled={bulkLoading || qtdMudados === 0}
+                className="inline-flex items-center gap-2 bg-primary text-primary-foreground rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-primary/90 disabled:opacity-50"
+              >
+                {bulkLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                Salvar alterações{qtdMudados > 0 ? ` (${qtdMudados})` : ''}
+              </button>
+            </div>
+
+            <div className="relative mb-3">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+              <input
+                value={buscaTabela}
+                onChange={(e) => setBuscaTabela(e.target.value)}
+                placeholder="Buscar produto..."
+                className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+
+            <div className="border border-border rounded-xl overflow-x-auto">
+              <table className="w-full border-collapse">
+                <thead className="bg-secondary/60 text-muted-foreground text-[11px] uppercase tracking-wide">
+                  <tr>
+                    <th className="text-left px-3 py-2 font-semibold">Nome</th>
+                    <th className="text-left px-3 py-2 font-semibold">Descrição</th>
+                    <th className="text-left px-3 py-2 font-semibold">Categoria</th>
+                    <th className="text-left px-3 py-2 font-semibold">Por</th>
+                    <th className="text-right px-3 py-2 font-semibold">Preço R$</th>
+                    <th className="text-center px-3 py-2 font-semibold">Ativo</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tabelaFiltrada.map((p) => (
+                    <LinhaTabela key={p.id} p={p} onChange={onChangeLinha} />
+                  ))}
+                </tbody>
+              </table>
+              {tabelaFiltrada.length === 0 && <p className="text-center text-muted-foreground py-10 text-sm">Nenhum produto encontrado.</p>}
+            </div>
+
+            <p className="text-[11px] text-muted-foreground mt-2">
+              {tabela.length} produtos no catálogo · desmarque <strong>Ativo</strong> pra esconder do dia a dia (sem apagar o histórico).
+            </p>
+
+            {qtdMudados > 0 && (
+              <div className="sticky bottom-3 mt-4 flex justify-center pointer-events-none">
+                <button
+                  onClick={salvarTabela}
+                  disabled={bulkLoading}
+                  className="pointer-events-auto inline-flex items-center gap-2 bg-primary text-primary-foreground rounded-full px-6 py-3 text-sm font-semibold shadow-lg hover:bg-primary/90 disabled:opacity-50"
+                >
+                  {bulkLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                  Salvar {qtdMudados} {qtdMudados === 1 ? 'alteração' : 'alterações'}
+                </button>
               </div>
             )}
           </>
