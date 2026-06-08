@@ -164,13 +164,26 @@ type LinhaProduto = Omit<ProdutoAdmin, 'preco'> & { preco: number | string }
 const LinhaTabela = memo(function LinhaTabela({
   p,
   onChange,
+  onUpload,
 }: {
   p: LinhaProduto
   onChange: (id: number, campo: keyof LinhaProduto, valor: string | number | boolean) => void
+  onUpload: (id: number, file: File) => void
 }) {
   const cel = 'w-full border border-transparent hover:border-border focus:border-primary rounded px-2 py-1 bg-transparent focus:bg-card text-sm outline-none'
   return (
     <tr className={`border-b border-border ${p.ativo ? '' : 'opacity-50'}`}>
+      <td className="p-1">
+        <label className="w-11 h-11 rounded-lg overflow-hidden bg-secondary/50 flex items-center justify-center cursor-pointer" title="Trocar foto">
+          {p.foto_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={p.foto_url} alt="" loading="lazy" className="w-full h-full object-cover" />
+          ) : (
+            <ImageIcon className="w-4 h-4 text-muted-foreground" />
+          )}
+          <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) onUpload(p.id, f) }} />
+        </label>
+      </td>
       <td className="p-1">
         <input value={p.nome} onChange={(e) => onChange(p.id, 'nome', e.target.value)} className={`${cel} min-w-[150px] font-medium`} />
       </td>
@@ -217,7 +230,6 @@ export default function AdminPage() {
   // Filtros / busca / som (modo cozinha + gestão)
   const [filtroStatus, setFiltroStatus] = useState<string>('todos')
   const [buscaPedido, setBuscaPedido] = useState('')
-  const [buscaProduto, setBuscaProduto] = useState('')
   const [catProduto, setCatProduto] = useState('Todas')
   const [som, setSom] = useState(true)
 
@@ -282,6 +294,23 @@ export default function AdminPage() {
     })
   }, [])
 
+  // Upload de foto direto numa linha da tabela (salva na hora).
+  const handleUploadLinha = useCallback(async (id: number, file: File) => {
+    setMsg('Enviando foto...')
+    const otimizada = await comprimirImagem(file)
+    const { ext, contentType } = tipoDaImagem(otimizada, file.name)
+    const path = `produto-${Date.now()}.${ext}`
+    const { error } = await supabase.storage.from('produtos').upload(path, otimizada, { upsert: true, cacheControl: '3600', contentType })
+    if (error) {
+      setMsg('Erro no upload: ' + error.message)
+      return
+    }
+    const { data } = supabase.storage.from('produtos').getPublicUrl(path)
+    await supabase.from('produtos').update({ foto_url: data.publicUrl }).eq('id', id)
+    setTabela((prev) => prev.map((p) => (p.id === id ? { ...p, foto_url: data.publicUrl } : p)))
+    setMsg('Foto atualizada.')
+  }, [])
+
   async function salvarTabela() {
     const mudados = tabela.filter((p) => dirty.has(p.id))
     if (mudados.length === 0) {
@@ -300,6 +329,7 @@ export default function AdminPage() {
             categoria: p.categoria,
             unidade: p.unidade,
             ativo: p.ativo,
+            foto_url: p.foto_url,
           })
           .eq('id', p.id),
       ),
@@ -545,21 +575,6 @@ export default function AdminPage() {
     setModelos(removerModelo(id))
   }
 
-  // Edição rápida de preço direto na lista de Produtos (sem abrir o modal).
-  async function salvarPrecoRapido(id: number, valorStr: string) {
-    const preco = Number(String(valorStr).replace(',', '.'))
-    if (!Number.isFinite(preco) || preco < 0) return
-    const atual = produtos.find((p) => p.id === id)
-    if (atual && Number(atual.preco) === preco) return
-    const { error } = await supabase.from('produtos').update({ preco }).eq('id', id)
-    if (error) {
-      setMsg('Erro ao salvar preço: ' + error.message)
-      return
-    }
-    setProdutos((prev) => prev.map((p) => (p.id === id ? { ...p, preco } : p)))
-    setMsg('Preço atualizado.')
-  }
-
   function alternarSom() {
     setSom((s) => {
       const n = !s
@@ -587,20 +602,6 @@ export default function AdminPage() {
 
   function abrirNovo() {
     setForm(formVazio)
-    setFormAberto(true)
-  }
-
-  function abrirEdicao(p: ProdutoAdmin) {
-    setForm({
-      id: p.id,
-      nome: p.nome,
-      descricao: p.descricao ?? '',
-      preco: String(p.preco),
-      categoria: p.categoria,
-      unidade: p.unidade === 'kg' ? 'kg' : 'un',
-      emoji: p.emoji ?? '',
-      foto_url: p.foto_url,
-    })
     setFormAberto(true)
   }
 
@@ -656,13 +657,6 @@ export default function AdminPage() {
     setFormAberto(false)
     // Atualiza a aba "Cardápio de Hoje" em segundo plano (não trava o salvar).
     carregarItens()
-  }
-
-  async function alternarAtivo(p: ProdutoAdmin) {
-    const { error } = await supabase.from('produtos').update({ ativo: !p.ativo }).eq('id', p.id)
-    setMsg(error ? `Erro: ${error.message}` : p.ativo ? `${p.nome} desativado` : `${p.nome} reativado`)
-    await carregarProdutos()
-    await carregarItens()
   }
 
   // ---------- TELAS ----------
@@ -745,20 +739,16 @@ export default function AdminPage() {
     return okStatus && okBusca
   })
 
-  // Produtos filtrados (busca + categoria)
-  const qp = buscaProduto.trim().toLowerCase()
-  const produtosFiltrados = produtos.filter((p) => {
-    const okCat = catProduto === 'Todas' || p.categoria === catProduto
-    const okQ = !qp || p.nome.toLowerCase().includes(qp)
-    return okCat && okQ
-  })
-
   const itensBaixos = itensHoje.filter(estoqueBaixo).length
   const categoriasCardapio = Array.from(new Set(itensHoje.map((i) => i.categoria)))
   const ligadosCount = itensHoje.filter((i) => i.ligado).length
   const itensCardapioFiltrados = listaFiltradaCardapio()
   const qTab = buscaTabela.trim().toLowerCase()
-  const tabelaFiltrada = qTab ? tabela.filter((p) => p.nome.toLowerCase().includes(qTab) || p.categoria.toLowerCase().includes(qTab)) : tabela
+  const tabelaFiltrada = tabela.filter((p) => {
+    const okCat = catProduto === 'Todas' || p.categoria === catProduto
+    const okBusca = !qTab || p.nome.toLowerCase().includes(qTab) || p.categoria.toLowerCase().includes(qTab)
+    return okCat && okBusca
+  })
   const qtdMudados = dirty.size
 
   function exportarCSV() {
@@ -798,7 +788,7 @@ export default function AdminPage() {
           </div>
         </div>
         <nav className="flex md:flex-col gap-1 p-3 md:flex-1 overflow-x-auto">
-          {([['resumo', 'Resumo', LayoutDashboard], ['pedidos', 'Pedidos', ClipboardList], ['cardapio', 'Cardápio de Hoje', CalendarDays], ['tabela', 'Tabela', Table], ['produtos', 'Produtos', Package]] as const).map(([id, label, Icon]) => (
+          {([['resumo', 'Resumo', LayoutDashboard], ['pedidos', 'Pedidos', ClipboardList], ['cardapio', 'Cardápio de Hoje', CalendarDays], ['tabela', 'Produtos', Table]] as const).map(([id, label, Icon]) => (
             <button
               key={id}
               onClick={() => setAba(id)}
@@ -1219,115 +1209,49 @@ export default function AdminPage() {
           </>
         )}
 
-        {/* ---------- ABA PRODUTOS ---------- */}
-        {aba === 'produtos' && (
-          <>
-            <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
-              <p className="text-sm text-muted-foreground">Catálogo da padaria (cadastra uma vez).</p>
-              <button onClick={abrirNovo} className="bg-primary text-primary-foreground rounded-xl px-4 py-2 text-sm font-medium">+ Novo produto</button>
-            </div>
-
-            {/* Busca + filtro por categoria */}
-            <div className="flex gap-2 mb-4 flex-wrap">
-              <div className="relative flex-1 min-w-[180px]">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-                <input
-                  value={buscaProduto}
-                  onChange={(e) => setBuscaProduto(e.target.value)}
-                  placeholder="Buscar produto..."
-                  className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                />
-              </div>
-              <select
-                value={catProduto}
-                onChange={(e) => setCatProduto(e.target.value)}
-                className="rounded-xl border border-border bg-card px-3 py-2.5 text-sm"
-              >
-                {['Todas', ...CATEGORIAS].map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-
-            {produtosFiltrados.length === 0 ? (
-              <div className="text-center py-16 text-muted-foreground">
-                <Package className="w-10 h-10 mx-auto mb-2 opacity-40" />
-                Nenhum produto encontrado.
-              </div>
-            ) : (
-              <div className="grid gap-3 sm:grid-cols-2">
-                {produtosFiltrados.map((p) => (
-                  <div key={p.id} className={`rounded-2xl border border-border p-3 flex items-center gap-3 ${p.ativo ? 'bg-card' : 'bg-muted/40 opacity-70'}`}>
-                    <div className="w-14 h-14 rounded-lg overflow-hidden bg-secondary/50 flex items-center justify-center flex-shrink-0">
-                      {p.foto_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={p.foto_url} alt={p.nome} loading="lazy" className="w-full h-full object-cover" />
-                      ) : (
-                        <Package className="w-6 h-6 text-muted-foreground" />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">{p.nome} {!p.ativo && <span className="text-xs text-muted-foreground">(inativo)</span>}</p>
-                      <div className="text-xs text-muted-foreground flex items-center gap-1.5 mt-0.5">
-                        <span className="truncate">{p.categoria}</span>
-                        <span>·</span>
-                        <span className="inline-flex items-center gap-1 text-foreground">
-                          R$
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            defaultValue={Number(p.preco)}
-                            onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-                            onBlur={(e) => salvarPrecoRapido(p.id, e.target.value)}
-                            className="w-16 border border-border rounded px-1.5 py-0.5 bg-card text-xs"
-                            title="Editar preço e clicar fora (ou Enter) pra salvar"
-                          />
-                          {p.unidade === 'kg' ? '/kg' : ''}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <button onClick={() => abrirEdicao(p)} className="text-xs bg-primary text-primary-foreground rounded-lg px-3 py-1.5">Editar</button>
-                      <button onClick={() => alternarAtivo(p)} className="text-xs border border-border rounded-lg px-3 py-1.5">{p.ativo ? 'Desativar' : 'Reativar'}</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </>
-        )}
-
-        {/* ---------- ABA TABELA (edição em massa) ---------- */}
+        {/* ---------- ABA PRODUTOS (tabela / edição em massa) ---------- */}
         {aba === 'tabela' && (
           <>
             <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
               <div>
-                <h2 className="font-heading text-xl font-bold">Tabela de produtos</h2>
-                <p className="text-sm text-muted-foreground">Edite tudo de uma vez. As mudanças só vão pro banco quando você clicar em salvar.</p>
+                <h2 className="font-heading text-xl font-bold">Produtos</h2>
+                <p className="text-sm text-muted-foreground">Tudo num lugar só: foto, nome, preço, categoria e ativo. As mudanças só vão pro banco ao salvar.</p>
               </div>
-              <button
-                onClick={salvarTabela}
-                disabled={bulkLoading || qtdMudados === 0}
-                className="inline-flex items-center gap-2 bg-primary text-primary-foreground rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-primary/90 disabled:opacity-50"
-              >
-                {bulkLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                Salvar alterações{qtdMudados > 0 ? ` (${qtdMudados})` : ''}
-              </button>
+              <div className="flex items-center gap-2">
+                <button onClick={abrirNovo} className="inline-flex items-center gap-1.5 border border-border rounded-xl px-3 py-2.5 text-sm font-medium hover:bg-secondary">
+                  <Plus className="w-4 h-4" /> Novo produto
+                </button>
+                <button
+                  onClick={salvarTabela}
+                  disabled={bulkLoading || qtdMudados === 0}
+                  className="inline-flex items-center gap-2 bg-primary text-primary-foreground rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-primary/90 disabled:opacity-50"
+                >
+                  {bulkLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                  Salvar{qtdMudados > 0 ? ` (${qtdMudados})` : ''}
+                </button>
+              </div>
             </div>
 
-            <div className="relative mb-3">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-              <input
-                value={buscaTabela}
-                onChange={(e) => setBuscaTabela(e.target.value)}
-                placeholder="Buscar produto..."
-                className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-              />
+            <div className="flex gap-2 mb-3 flex-wrap">
+              <div className="relative flex-1 min-w-[180px]">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                <input
+                  value={buscaTabela}
+                  onChange={(e) => setBuscaTabela(e.target.value)}
+                  placeholder="Buscar produto..."
+                  className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+              <select value={catProduto} onChange={(e) => setCatProduto(e.target.value)} className="rounded-xl border border-border bg-card px-3 py-2.5 text-sm">
+                {['Todas', ...CATEGORIAS].map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
             </div>
 
             <div className="border border-border rounded-xl overflow-x-auto">
               <table className="w-full border-collapse">
                 <thead className="bg-secondary/60 text-muted-foreground text-[11px] uppercase tracking-wide">
                   <tr>
+                    <th className="text-left px-3 py-2 font-semibold">Foto</th>
                     <th className="text-left px-3 py-2 font-semibold">Nome</th>
                     <th className="text-left px-3 py-2 font-semibold">Descrição</th>
                     <th className="text-left px-3 py-2 font-semibold">Categoria</th>
@@ -1338,7 +1262,7 @@ export default function AdminPage() {
                 </thead>
                 <tbody>
                   {tabelaFiltrada.map((p) => (
-                    <LinhaTabela key={p.id} p={p} onChange={onChangeLinha} />
+                    <LinhaTabela key={p.id} p={p} onChange={onChangeLinha} onUpload={handleUploadLinha} />
                   ))}
                 </tbody>
               </table>
