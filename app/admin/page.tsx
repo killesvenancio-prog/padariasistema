@@ -5,9 +5,10 @@ import { supabase } from '@/lib/supabase'
 import { useToast } from '@/components/Toast'
 import { formatarQuantidade } from '@/lib/format'
 import { comprimirImagem, tipoDaImagem } from '@/lib/imagem'
+import { listarModelos, salvarModelo, removerModelo, type ModeloCardapio } from '@/lib/modelosCardapio'
 import {
   LayoutDashboard, ClipboardList, CalendarDays, Package, Store, Lock, ImageIcon,
-  Search, Printer, Download, Bell, BellOff, AlertTriangle, X, RotateCcw, Loader2, Plus,
+  Search, Printer, Download, Bell, BellOff, AlertTriangle, X, RotateCcw, Loader2, Plus, Save,
 } from 'lucide-react'
 
 interface ItemHoje {
@@ -194,6 +195,9 @@ export default function AdminPage() {
   const [varQtd, setVarQtd] = useState('10')
   const [varSalvando, setVarSalvando] = useState(false)
 
+  // Modelos de cardápio salvos
+  const [modelos, setModelos] = useState<ModeloCardapio[]>([])
+
   const [form, setForm] = useState(formVazio)
   const [formAberto, setFormAberto] = useState(false)
   const [salvando, setSalvando] = useState(false)
@@ -215,6 +219,7 @@ export default function AdminPage() {
     } catch {
       /* ignora */
     }
+    setModelos(listarModelos())
   }, [])
 
   // atualiza os pedidos sozinho enquanto a aba Pedidos ou Resumo está aberta
@@ -423,6 +428,48 @@ export default function AdminPage() {
     setMsg(`${validos.length} ${validos.length === 1 ? 'item adicionado' : 'itens adicionados'} ao cardápio de hoje.`)
     await carregarProdutos()
     await carregarItens()
+  }
+
+  // ----- Modelos de cardápio -----
+  function salvarModeloAtual() {
+    const ligados = itensHoje
+      .filter((i) => i.ligado)
+      .map((i) => ({ produto_id: i.produto_id, quantidade: Number(qtds[i.produto_id] ?? i.quantidade) || 0 }))
+    if (ligados.length === 0) {
+      setMsg('Ligue os itens que quer salvar antes de criar o modelo.')
+      return
+    }
+    const nome = (window.prompt('Nome do modelo (ex.: Dia de semana, Sábado, Dia de bolo):') || '').trim()
+    if (!nome) return
+    setModelos(salvarModelo(nome, ligados))
+    setMsg(`Modelo "${nome}" salvo com ${ligados.length} itens.`)
+  }
+
+  async function aplicarModelo(m: ModeloCardapio) {
+    setBulkLoading(true)
+    await Promise.all(m.itens.map((it) => supabase.rpc('ligar_item_hoje', { p_produto_id: it.produto_id, p_quantidade: it.quantidade })))
+    setBulkLoading(false)
+    setMsg(`Modelo "${m.nome}" aplicado — ${m.itens.length} itens ligados.`)
+    await carregarItens()
+  }
+
+  function excluirModelo(id: string) {
+    setModelos(removerModelo(id))
+  }
+
+  // Edição rápida de preço direto na lista de Produtos (sem abrir o modal).
+  async function salvarPrecoRapido(id: number, valorStr: string) {
+    const preco = Number(String(valorStr).replace(',', '.'))
+    if (!Number.isFinite(preco) || preco < 0) return
+    const atual = produtos.find((p) => p.id === id)
+    if (atual && Number(atual.preco) === preco) return
+    const { error } = await supabase.from('produtos').update({ preco }).eq('id', id)
+    if (error) {
+      setMsg('Erro ao salvar preço: ' + error.message)
+      return
+    }
+    setProdutos((prev) => prev.map((p) => (p.id === id ? { ...p, preco } : p)))
+    setMsg('Preço atualizado.')
   }
 
   function alternarSom() {
@@ -969,6 +1016,23 @@ export default function AdminPage() {
               </div>
             </div>
 
+            {/* Modelos de cardápio salvos */}
+            <div className="flex items-center gap-2 flex-wrap mb-3">
+              <button onClick={salvarModeloAtual} disabled={bulkLoading} className="inline-flex items-center gap-1.5 text-sm border border-border rounded-lg px-3 py-1.5 hover:bg-secondary disabled:opacity-50">
+                <Save className="w-4 h-4" /> Salvar como modelo
+              </button>
+              {modelos.map((m) => (
+                <span key={m.id} className="inline-flex items-center rounded-full border border-border bg-card text-sm overflow-hidden">
+                  <button onClick={() => aplicarModelo(m)} disabled={bulkLoading} className="pl-3 pr-2 py-1.5 hover:bg-primary/10 disabled:opacity-50">
+                    {m.nome} <span className="text-muted-foreground text-xs">({m.itens.length})</span>
+                  </button>
+                  <button onClick={() => excluirModelo(m.id)} className="px-2 py-1.5 text-muted-foreground hover:text-destructive border-l border-border" title="Excluir modelo">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </span>
+              ))}
+            </div>
+
             {/* Filtro por categoria */}
             <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1 mb-2">
               {['Todas', ...categoriasCardapio].map((c) => (
@@ -1111,7 +1175,24 @@ export default function AdminPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-medium truncate">{p.nome} {!p.ativo && <span className="text-xs text-muted-foreground">(inativo)</span>}</p>
-                      <p className="text-xs text-muted-foreground">{p.categoria} · R$ {Number(p.preco).toFixed(2)}{p.unidade === 'kg' ? '/kg · por peso' : ' · por unidade'}</p>
+                      <div className="text-xs text-muted-foreground flex items-center gap-1.5 mt-0.5">
+                        <span className="truncate">{p.categoria}</span>
+                        <span>·</span>
+                        <span className="inline-flex items-center gap-1 text-foreground">
+                          R$
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            defaultValue={Number(p.preco)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                            onBlur={(e) => salvarPrecoRapido(p.id, e.target.value)}
+                            className="w-16 border border-border rounded px-1.5 py-0.5 bg-card text-xs"
+                            title="Editar preço e clicar fora (ou Enter) pra salvar"
+                          />
+                          {p.unidade === 'kg' ? '/kg' : ''}
+                        </span>
+                      </div>
                     </div>
                     <div className="flex flex-col gap-1">
                       <button onClick={() => abrirEdicao(p)} className="text-xs bg-primary text-primary-foreground rounded-lg px-3 py-1.5">Editar</button>
