@@ -8,7 +8,7 @@ import { formatarPreco, formatarQuantidade } from '@/lib/format'
 import { fotoDe } from '@/lib/fotos'
 import { iconeCategoria } from '@/lib/categorias'
 import { ProductModal } from './ProductModal'
-import { Plus, Minus, Scale } from 'lucide-react'
+import { Plus, Minus, Scale, AlertTriangle } from 'lucide-react'
 
 const PESOS = [0.1, 0.25, 0.5, 1]
 
@@ -86,6 +86,12 @@ export function ProductCard({ produto }: ProductCardProps) {
               formatarPreco(produto.preco)
             )}
           </p>
+
+          {produto.a_verificar && (
+            <span className="inline-flex items-center gap-1 mt-1 text-[11px] font-medium text-amber-700 bg-amber-100 border border-amber-200 rounded-full px-2 py-0.5 w-fit">
+              <AlertTriangle className="w-3 h-3" /> A verificar disponibilidade
+            </span>
+          )}
 
           {/* Itens por kg: escolher como pedir (claro) */}
           {ehKg && (

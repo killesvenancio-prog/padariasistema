@@ -66,7 +66,18 @@ export function MenuPage() {
       try {
         const { data, error: rpcError } = await supabase.rpc('cardapio_do_dia')
         if (rpcError) throw rpcError
-        setProdutos(data || [])
+        let lista: Produto[] = data || []
+        // Marca os itens "a verificar disponibilidade" (aditivo; ignora se a função ainda não existir)
+        try {
+          const { data: av } = await supabase.rpc('itens_a_verificar')
+          if (Array.isArray(av)) {
+            const set = new Set(av as number[])
+            lista = lista.map((p) => ({ ...p, a_verificar: set.has(p.produto_id) }))
+          }
+        } catch {
+          /* função ainda não publicada */
+        }
+        setProdutos(lista)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Erro ao carregar cardápio')
       } finally {

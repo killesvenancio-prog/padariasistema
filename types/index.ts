@@ -8,6 +8,7 @@ export interface Produto {
   foto_url: string | null
   unidade: 'un' | 'kg'
   quantidade: number
+  a_verificar?: boolean
 }
 
 export interface ItemCarrinho {

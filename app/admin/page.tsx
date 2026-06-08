@@ -8,7 +8,7 @@ import { comprimirImagem, tipoDaImagem } from '@/lib/imagem'
 import { listarModelos, salvarModelo, removerModelo, type ModeloCardapio } from '@/lib/modelosCardapio'
 import {
   LayoutDashboard, ClipboardList, CalendarDays, Package, Store, Lock, ImageIcon,
-  Search, Printer, Download, Bell, BellOff, AlertTriangle, X, RotateCcw, Loader2, Plus, Save, Table,
+  Search, Printer, Download, Bell, BellOff, AlertTriangle, X, RotateCcw, Loader2, Plus, Save, Table, Camera,
 } from 'lucide-react'
 
 interface ItemHoje {
@@ -32,6 +32,7 @@ interface ProdutoAdmin {
   foto_url: string | null
   unidade: string
   ativo: boolean
+  a_verificar?: boolean
 }
 
 interface ItemPedido {
@@ -165,10 +166,12 @@ const LinhaTabela = memo(function LinhaTabela({
   p,
   onChange,
   onUpload,
+  onToggleVerificar,
 }: {
   p: LinhaProduto
   onChange: (id: number, campo: keyof LinhaProduto, valor: string | number | boolean) => void
   onUpload: (id: number, file: File) => void
+  onToggleVerificar: (id: number, valor: boolean) => void
 }) {
   const cel = 'w-full border border-transparent hover:border-border focus:border-primary rounded px-2 py-1 bg-transparent focus:bg-card text-sm outline-none'
   return (
@@ -206,6 +209,9 @@ const LinhaTabela = memo(function LinhaTabela({
       </td>
       <td className="p-1 text-center">
         <input type="checkbox" checked={p.ativo} onChange={(e) => onChange(p.id, 'ativo', e.target.checked)} className="w-4 h-4" />
+      </td>
+      <td className="p-1 text-center">
+        <input type="checkbox" checked={!!p.a_verificar} onChange={(e) => onToggleVerificar(p.id, e.target.checked)} className="w-4 h-4 accent-amber-500" title="A verificar disponibilidade" />
       </td>
     </tr>
   )
@@ -254,6 +260,13 @@ export default function AdminPage() {
   const [tabela, setTabela] = useState<LinhaProduto[]>([])
   const [dirty, setDirty] = useState<Set<number>>(new Set())
   const [buscaTabela, setBuscaTabela] = useState('')
+
+  // Foto do balcão (detecção por IA)
+  const [balcaoAberto, setBalcaoAberto] = useState(false)
+  const [balcaoLoading, setBalcaoLoading] = useState(false)
+  const [balcaoDetectados, setBalcaoDetectados] = useState<{ produto_id: number; nome: string }[]>([])
+  const [balcaoSel, setBalcaoSel] = useState<Set<number>>(new Set())
+  const [balcaoQtd, setBalcaoQtd] = useState('10')
 
   const [form, setForm] = useState(formVazio)
   const [formAberto, setFormAberto] = useState(false)
@@ -310,6 +323,65 @@ export default function AdminPage() {
     setTabela((prev) => prev.map((p) => (p.id === id ? { ...p, foto_url: data.publicUrl } : p)))
     setMsg('Foto atualizada.')
   }, [])
+
+  // Marca/desmarca "a verificar disponibilidade" (salva na hora).
+  const onToggleVerificar = useCallback(async (id: number, valor: boolean) => {
+    setTabela((prev) => prev.map((p) => (p.id === id ? { ...p, a_verificar: valor } : p)))
+    const { error } = await supabase.from('produtos').update({ a_verificar: valor }).eq('id', id)
+    if (error) {
+      setMsg('Para usar "a verificar", rode antes o SQL a-verificar.sql no Supabase.')
+      setTabela((prev) => prev.map((p) => (p.id === id ? { ...p, a_verificar: !valor } : p)))
+    }
+  }, [])
+
+  // Analisa a foto do balcão (Edge Function de visão) e lista os itens detectados.
+  async function analisarBalcao(file: File) {
+    setBalcaoLoading(true)
+    setBalcaoDetectados([])
+    try {
+      const otimizada = await comprimirImagem(file, 1100, 0.8)
+      const dataUrl: string = await new Promise((resolve, reject) => {
+        const fr = new FileReader()
+        fr.onload = () => resolve(fr.result as string)
+        fr.onerror = () => reject(new Error('read'))
+        fr.readAsDataURL(otimizada)
+      })
+      const { data, error } = await supabase.functions.invoke('balcao', { body: { imagem: dataUrl } })
+      if (error || !data || data.erro) {
+        setMsg(data?.erro || 'Não consegui analisar a foto. Publicou a função "balcao"?')
+        return
+      }
+      const det = (data.itens || []) as { produto_id: number; nome: string }[]
+      if (det.length === 0) {
+        setMsg('Não reconheci itens do catálogo nessa foto. Tente outra, mais de frente.')
+      }
+      setBalcaoDetectados(det)
+      setBalcaoSel(new Set(det.map((d) => d.produto_id)))
+    } catch {
+      setMsg('Erro ao processar a foto.')
+    } finally {
+      setBalcaoLoading(false)
+    }
+  }
+
+  // Liga os itens confirmados, marcados como "a verificar".
+  async function ativarDetectados() {
+    const escolhidos = balcaoDetectados.filter((d) => balcaoSel.has(d.produto_id))
+    if (escolhidos.length === 0) {
+      setMsg('Selecione ao menos um item.')
+      return
+    }
+    const qtd = Math.max(0, Number(balcaoQtd) || 0)
+    setBalcaoLoading(true)
+    await Promise.all(escolhidos.map((d) => supabase.rpc('ligar_item_hoje', { p_produto_id: d.produto_id, p_quantidade: qtd })))
+    await Promise.all(escolhidos.map((d) => supabase.from('produtos').update({ a_verificar: true }).eq('id', d.produto_id)))
+    setBalcaoLoading(false)
+    setBalcaoAberto(false)
+    setBalcaoDetectados([])
+    setMsg(`${escolhidos.length} ${escolhidos.length === 1 ? 'item ligado' : 'itens ligados'} (a verificar).`)
+    await carregarItens()
+    await carregarProdutos()
+  }
 
   async function salvarTabela() {
     const mudados = tabela.filter((p) => dirty.has(p.id))
@@ -1086,6 +1158,14 @@ export default function AdminPage() {
               >
                 <Plus className="w-4 h-4" /> Adicionar vários
               </button>
+              <button
+                onClick={() => setBalcaoAberto(true)}
+                disabled={bulkLoading}
+                className="inline-flex items-center gap-2 border border-primary/40 text-primary rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-primary/10 disabled:opacity-50"
+                title="Detectar itens por uma foto do balcão"
+              >
+                <Camera className="w-4 h-4" /> Foto do balcão
+              </button>
               <div className="relative flex-1 min-w-[180px]">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
                 <input
@@ -1258,11 +1338,12 @@ export default function AdminPage() {
                     <th className="text-left px-3 py-2 font-semibold">Por</th>
                     <th className="text-right px-3 py-2 font-semibold">Preço R$</th>
                     <th className="text-center px-3 py-2 font-semibold">Ativo</th>
+                    <th className="text-center px-3 py-2 font-semibold">Verificar</th>
                   </tr>
                 </thead>
                 <tbody>
                   {tabelaFiltrada.map((p) => (
-                    <LinhaTabela key={p.id} p={p} onChange={onChangeLinha} onUpload={handleUploadLinha} />
+                    <LinhaTabela key={p.id} p={p} onChange={onChangeLinha} onUpload={handleUploadLinha} onToggleVerificar={onToggleVerificar} />
                   ))}
                 </tbody>
               </table>
@@ -1444,6 +1525,76 @@ export default function AdminPage() {
                 {varSalvando ? 'Adicionando...' : 'Adicionar ao cardápio'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---------- FOTO DO BALCÃO (detecção por IA) ---------- */}
+      {balcaoAberto && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={() => !balcaoLoading && setBalcaoAberto(false)}>
+          <div onClick={(e) => e.stopPropagation()} className="bg-background w-full max-w-md rounded-t-2xl sm:rounded-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between">
+              <h2 className="font-heading font-bold text-lg flex items-center gap-2"><Camera className="w-5 h-5" /> Foto do balcão</h2>
+              <button type="button" onClick={() => setBalcaoAberto(false)} className="text-muted-foreground text-xl">✕</button>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Tire uma foto do balcão (de frente, boa luz). A IA detecta os itens; você confirma e eles entram no cardápio marcados como <strong>&ldquo;a verificar&rdquo;</strong>.
+            </p>
+
+            {balcaoDetectados.length === 0 ? (
+              <label className="block border-2 border-dashed border-border rounded-xl p-8 text-center cursor-pointer hover:border-primary/40">
+                {balcaoLoading ? (
+                  <span className="inline-flex items-center gap-2 text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin" /> Analisando a foto...</span>
+                ) : (
+                  <span className="inline-flex items-center gap-2 text-primary font-medium"><Camera className="w-5 h-5" /> Escolher / tirar foto</span>
+                )}
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  disabled={balcaoLoading}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0]
+                    if (f) analisarBalcao(f)
+                  }}
+                />
+              </label>
+            ) : (
+              <>
+                <p className="text-sm font-medium">{balcaoDetectados.length} itens detectados — confirme o que vai ligar:</p>
+                <div className="max-h-64 overflow-y-auto border border-border rounded-xl divide-y divide-border">
+                  {balcaoDetectados.map((d) => (
+                    <label key={d.produto_id} className="flex items-center gap-2.5 px-3 py-2 text-sm cursor-pointer hover:bg-secondary/50">
+                      <input
+                        type="checkbox"
+                        checked={balcaoSel.has(d.produto_id)}
+                        onChange={(e) =>
+                          setBalcaoSel((prev) => {
+                            const n = new Set(prev)
+                            if (e.target.checked) n.add(d.produto_id)
+                            else n.delete(d.produto_id)
+                            return n
+                          })
+                        }
+                        className="w-4 h-4"
+                      />
+                      {d.nome}
+                    </label>
+                  ))}
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-sm text-muted-foreground">Qtd. cada</label>
+                  <input type="number" min={0} value={balcaoQtd} onChange={(e) => setBalcaoQtd(e.target.value)} className="w-20 border rounded-lg px-2 py-1.5 bg-card text-sm" />
+                </div>
+                <div className="flex gap-3 pt-1">
+                  <button type="button" onClick={() => setBalcaoDetectados([])} className="flex-1 border border-border rounded-xl py-3 font-medium">Outra foto</button>
+                  <button type="button" onClick={ativarDetectados} disabled={balcaoLoading} className="flex-1 bg-primary text-primary-foreground rounded-xl py-3 font-medium disabled:opacity-50">
+                    {balcaoLoading ? 'Ativando...' : 'Ativar (a verificar)'}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
