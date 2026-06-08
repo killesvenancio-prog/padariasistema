@@ -194,24 +194,24 @@ export function MenuPage() {
             </div>
           </div>
 
-          {/* Informações da loja */}
-          <div className="flex flex-wrap gap-2.5 lg:justify-end lg:max-w-md">
-            <span className="flex items-start gap-2 bg-white/[0.07] border border-white/10 rounded-xl px-3 py-2 text-[12.5px] text-white/85">
+          {/* Informações da loja (texto limpo, sem balão) */}
+          <div className="flex flex-col gap-2 text-[13px] text-white/80 lg:max-w-xs">
+            <span className="flex items-start gap-2.5">
               <MapPin className="w-4 h-4 mt-0.5 flex-shrink-0 text-accent" />
               <span>
                 Marechal Floriano Peixoto, 226 — Cidade Alta
-                <a href="https://www.google.com/maps/search/?api=1&query=Padaria+Santa+Cecilia+Marechal+Floriano+Peixoto+226+Santo+Antonio+da+Patrulha" target="_blank" rel="noreferrer" className="block underline text-white/70 hover:text-white">ver no mapa</a>
+                <a href="https://www.google.com/maps/search/?api=1&query=Padaria+Santa+Cecilia+Marechal+Floriano+Peixoto+226+Santo+Antonio+da+Patrulha" target="_blank" rel="noreferrer" className="underline text-white/60 hover:text-white ml-1">ver no mapa</a>
               </span>
             </span>
-            <span className="flex items-start gap-2 bg-white/[0.07] border border-white/10 rounded-xl px-3 py-2 text-[12.5px] text-white/85">
+            <span className="flex items-start gap-2.5">
               <Clock className="w-4 h-4 mt-0.5 flex-shrink-0 text-accent" />
-              <span>Seg–Sex 6h30–19h30<br />Sáb 6h30–11h · 15h–19h30 · Dom fechado</span>
+              <span>Seg–Sex 6h30–19h30 · Sáb 6h30–11h e 15h–19h30 · Dom fechado</span>
             </span>
-            <Link href="/pedidos" className="flex items-center gap-2 bg-white/[0.07] border border-white/10 rounded-xl px-3 py-2 text-[12.5px] text-white/85 hover:bg-white/10 transition">
+            <Link href="/pedidos" className="flex items-center gap-2.5 hover:text-white transition w-fit">
               <ClipboardList className="w-4 h-4 flex-shrink-0 text-accent" />
               <span className="underline">Meus pedidos</span>
             </Link>
-            <a href="https://www.instagram.com/santaceciliapadaria/" target="_blank" rel="noreferrer" className="flex items-center gap-2 bg-white/[0.07] border border-white/10 rounded-xl px-3 py-2 text-[12.5px] text-white/85 hover:bg-white/10 transition">
+            <a href="https://www.instagram.com/santaceciliapadaria/" target="_blank" rel="noreferrer" className="flex items-center gap-2.5 hover:text-white transition w-fit">
               <Camera className="w-4 h-4 flex-shrink-0 text-accent" />
               <span className="underline">@santaceciliapadaria</span>
             </a>
