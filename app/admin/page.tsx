@@ -141,7 +141,7 @@ function montarComandaHTML(pd: PedidoAdmin): string {
     .q { font-weight: 800; font-size: 14px; min-width: 46px; }
     .nm { font-size: 14px; flex: 1; }
     .pesar { font-size: 11px; font-weight: normal; }
-    .tot { display: flex; justify-content: space-between; font-size: 17px; font-weight: 800; border-top: 2px solid #000; padding-top: 8px; }
+    .aviso { text-align: center; font-size: 11px; font-style: italic; border-top: 2px solid #000; padding-top: 8px; margin-top: 8px; }
     .obs { font-size: 12px; margin-top: 10px; border: 1px dashed #000; border-radius: 6px; padding: 7px; }
     .obs b { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 3px; }
     .foot { text-align: center; font-size: 11px; margin-top: 14px; }
@@ -159,8 +159,8 @@ function montarComandaHTML(pd: PedidoAdmin): string {
     ${pd.cliente_nome ? `<div class="info">Cliente: <b>${esc(pd.cliente_nome)}</b></div>` : ''}
     ${pd.cliente_telefone ? `<div class="info">Tel: ${esc(pd.cliente_telefone)}</div>` : ''}
     <div class="itens">${itens}</div>
-    <div class="tot"><span>TOTAL</span><span>R$ ${Number(pd.total).toFixed(2)}</span></div>
     ${pd.observacao ? `<div class="obs"><b>Observação</b>${esc(pd.observacao)}</div>` : ''}
+    <div class="aviso">Valores conferidos e pesados no caixa</div>
     <div class="foot">Pedido #${pd.id} &middot; obrigado!</div>
   </body></html>`
 }
