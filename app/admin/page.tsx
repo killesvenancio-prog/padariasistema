@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback, memo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/components/Toast'
 import { formatarQuantidade } from '@/lib/format'
-import { comprimirImagem, tipoDaImagem, recortarImagem } from '@/lib/imagem'
+import { comprimirImagem, tipoDaImagem } from '@/lib/imagem'
 import { listarModelos, salvarModelo, removerModelo, type ModeloCardapio } from '@/lib/modelosCardapio'
 import {
   LayoutDashboard, ClipboardList, CalendarDays, Package, Store, Lock, ImageIcon,
@@ -162,6 +162,16 @@ const formVazio = {
 // Linha editável da aba "Tabela" (preço pode ficar string durante a edição).
 type LinhaProduto = Omit<ProdutoAdmin, 'preco'> & { preco: number | string }
 
+// Uma foto de produto sendo classificada pela IA.
+type FotoProduto = {
+  key: string
+  dataUrl: string
+  status: 'analisando' | 'ok' | 'erro'
+  produto_id: number | null
+  nome: string
+  categoria: string
+}
+
 const LinhaTabela = memo(function LinhaTabela({
   p,
   onChange,
@@ -261,13 +271,10 @@ export default function AdminPage() {
   const [dirty, setDirty] = useState<Set<number>>(new Set())
   const [buscaTabela, setBuscaTabela] = useState('')
 
-  // Foto do balcão (detecção por IA)
+  // Fotografar produtos (IA reconhece cada foto)
   const [balcaoAberto, setBalcaoAberto] = useState(false)
   const [balcaoLoading, setBalcaoLoading] = useState(false)
-  const [balcaoDetectados, setBalcaoDetectados] = useState<{ produto_id: number; nome: string; box?: number[] | null }[]>([])
-  const [balcaoCrops, setBalcaoCrops] = useState<Record<number, string>>({})
-  const [balcaoSel, setBalcaoSel] = useState<Set<number>>(new Set())
-  const [balcaoUsarFoto, setBalcaoUsarFoto] = useState<Set<number>>(new Set())
+  const [fotos, setFotos] = useState<FotoProduto[]>([])
   const [balcaoQtd, setBalcaoQtd] = useState('10')
 
   const [form, setForm] = useState(formVazio)
@@ -336,88 +343,93 @@ export default function AdminPage() {
     }
   }, [])
 
-  // Analisa a foto do balcão (Edge Function de visão) e lista os itens detectados.
-  async function analisarBalcao(file: File) {
-    setBalcaoLoading(true)
-    setBalcaoDetectados([])
-    setBalcaoCrops({})
-    try {
-      const otimizada = await comprimirImagem(file, 1100, 0.8)
+  function atualizaFoto(key: string, patch: Partial<FotoProduto>) {
+    setFotos((prev) => prev.map((f) => (f.key === key ? { ...f, ...patch } : f)))
+  }
+
+  function removerFoto(key: string) {
+    setFotos((prev) => prev.filter((f) => f.key !== key))
+  }
+
+  // Adiciona fotos: comprime, mostra na lista, e a IA classifica cada uma.
+  async function adicionarFotos(lista: File[]) {
+    const novas: FotoProduto[] = []
+    for (const file of lista) {
+      const otim = await comprimirImagem(file, 900, 0.82)
       const dataUrl: string = await new Promise((resolve, reject) => {
         const fr = new FileReader()
         fr.onload = () => resolve(fr.result as string)
         fr.onerror = () => reject(new Error('read'))
-        fr.readAsDataURL(otimizada)
+        fr.readAsDataURL(otim)
       })
-      const { data, error } = await supabase.functions.invoke('balcao', { body: { imagem: dataUrl } })
-      if (error || !data || data.erro) {
-        setMsg(data?.erro || 'Não consegui analisar a foto. Publicou a função "balcao"?')
-        return
-      }
-      const det = (data.itens || []) as { produto_id: number; nome: string; box?: number[] | null }[]
-      if (det.length === 0) {
-        setMsg('Não reconheci itens do catálogo nessa foto. Tente outra, mais de frente.')
-      }
-      // Recorta cada item pelo box (quando houver) pra você aprovar.
-      const crops: Record<number, string> = {}
-      for (const d of det) {
-        if (d.box) {
-          const c = await recortarImagem(dataUrl, d.box)
-          if (c) crops[d.produto_id] = c
+      novas.push({
+        key: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        dataUrl,
+        status: 'analisando',
+        produto_id: null,
+        nome: '',
+        categoria: 'Confeitaria',
+      })
+    }
+    setFotos((prev) => [...prev, ...novas])
+    for (const f of novas) {
+      try {
+        const { data, error } = await supabase.functions.invoke('balcao', { body: { imagem: f.dataUrl } })
+        if (error || !data || data.erro) {
+          atualizaFoto(f.key, { status: 'erro' })
+          continue
         }
+        atualizaFoto(f.key, {
+          status: 'ok',
+          produto_id: data.produto_id ?? null,
+          nome: String(data.nome ?? ''),
+          categoria: String(data.categoria ?? 'Confeitaria'),
+        })
+      } catch {
+        atualizaFoto(f.key, { status: 'erro' })
       }
-      setBalcaoCrops(crops)
-      setBalcaoDetectados(det)
-      setBalcaoSel(new Set(det.map((d) => d.produto_id)))
-      setBalcaoUsarFoto(new Set(Object.keys(crops).map(Number)))
-    } catch {
-      setMsg('Erro ao processar a foto.')
-    } finally {
-      setBalcaoLoading(false)
     }
   }
 
-  function toggleUsarFoto(id: number) {
-    setBalcaoUsarFoto((prev) => {
-      const n = new Set(prev)
-      if (n.has(id)) n.delete(id)
-      else n.add(id)
-      return n
-    })
-  }
-
-  // Liga os itens confirmados, marcados como "a verificar".
-  async function ativarDetectados() {
-    const escolhidos = balcaoDetectados.filter((d) => balcaoSel.has(d.produto_id))
-    if (escolhidos.length === 0) {
-      setMsg('Selecione ao menos um item.')
+  // Confirma: cria os novos, sobe as fotos e liga tudo no dia (a verificar).
+  async function confirmarFotos() {
+    const validas = fotos.filter((f) => f.status === 'ok' && f.nome.trim())
+    if (validas.length === 0) {
+      setMsg('Nenhuma foto pronta para adicionar.')
       return
     }
     const qtd = Math.max(0, Number(balcaoQtd) || 0)
     setBalcaoLoading(true)
-    await Promise.all(escolhidos.map((d) => supabase.rpc('ligar_item_hoje', { p_produto_id: d.produto_id, p_quantidade: qtd })))
-    await Promise.all(escolhidos.map((d) => supabase.from('produtos').update({ a_verificar: true }).eq('id', d.produto_id)))
-    // Sobe os recortes aprovados como foto do produto.
-    const comFoto = escolhidos.filter((d) => balcaoUsarFoto.has(d.produto_id) && balcaoCrops[d.produto_id])
-    await Promise.all(
-      comFoto.map(async (d) => {
-        try {
-          const blob = await (await fetch(balcaoCrops[d.produto_id])).blob()
-          const path = `produto-${Date.now()}-${d.produto_id}.jpg`
-          const { error } = await supabase.storage.from('produtos').upload(path, blob, { upsert: true, cacheControl: '3600', contentType: 'image/jpeg' })
-          if (error) return
+    let ok = 0
+    for (const f of validas) {
+      let pid = f.produto_id
+      if (pid == null) {
+        const ins = await supabase.from('produtos').insert({ nome: f.nome.trim(), categoria: f.categoria, unidade: 'un', ativo: true }).select().single()
+        if (ins.error || !ins.data) continue
+        pid = (ins.data as ProdutoAdmin).id
+      }
+      // sobe a foto (separado, pra não depender de outra coluna)
+      try {
+        const blob = await (await fetch(f.dataUrl)).blob()
+        const path = `produto-${Date.now()}-${pid}.jpg`
+        const up = await supabase.storage.from('produtos').upload(path, blob, { upsert: true, cacheControl: '3600', contentType: 'image/jpeg' })
+        if (!up.error) {
           const { data } = supabase.storage.from('produtos').getPublicUrl(path)
-          await supabase.from('produtos').update({ foto_url: data.publicUrl }).eq('id', d.produto_id)
-        } catch {
-          /* ignora recorte que falhou */
+          await supabase.from('produtos').update({ foto_url: data.publicUrl }).eq('id', pid)
         }
-      }),
-    )
+      } catch {
+        /* segue sem foto */
+      }
+      // marca "a verificar" (ignora se a coluna ainda não existir)
+      await supabase.from('produtos').update({ a_verificar: true }).eq('id', pid)
+      // liga no cardápio de hoje
+      await supabase.rpc('ligar_item_hoje', { p_produto_id: pid, p_quantidade: qtd })
+      ok++
+    }
     setBalcaoLoading(false)
     setBalcaoAberto(false)
-    setBalcaoDetectados([])
-    setBalcaoCrops({})
-    setMsg(`${escolhidos.length} ${escolhidos.length === 1 ? 'item ligado' : 'itens ligados'} (a verificar)${comFoto.length ? ` · ${comFoto.length} com foto` : ''}.`)
+    setFotos([])
+    setMsg(`${ok} ${ok === 1 ? 'produto adicionado' : 'produtos adicionados'} ao dia.`)
     await carregarItens()
     await carregarProdutos()
   }
@@ -1201,9 +1213,9 @@ export default function AdminPage() {
                 onClick={() => setBalcaoAberto(true)}
                 disabled={bulkLoading}
                 className="inline-flex items-center gap-2 border border-primary/40 text-primary rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-primary/10 disabled:opacity-50"
-                title="Detectar itens por uma foto do balcão"
+                title="Fotografar produtos — a IA reconhece e adiciona"
               >
-                <Camera className="w-4 h-4" /> Foto do balcão
+                <Camera className="w-4 h-4" /> Fotografar produtos
               </button>
               <div className="relative flex-1 min-w-[180px]">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
@@ -1568,89 +1580,74 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* ---------- FOTO DO BALCÃO (detecção por IA) ---------- */}
+      {/* ---------- FOTOGRAFAR PRODUTOS (IA classifica cada foto) ---------- */}
       {balcaoAberto && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={() => !balcaoLoading && setBalcaoAberto(false)}>
           <div onClick={(e) => e.stopPropagation()} className="bg-background w-full max-w-md rounded-t-2xl sm:rounded-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between">
-              <h2 className="font-heading font-bold text-lg flex items-center gap-2"><Camera className="w-5 h-5" /> Foto do balcão</h2>
+              <h2 className="font-heading font-bold text-lg flex items-center gap-2"><Camera className="w-5 h-5" /> Fotografar produtos</h2>
               <button type="button" onClick={() => setBalcaoAberto(false)} className="text-muted-foreground text-xl">✕</button>
             </div>
             <p className="text-sm text-muted-foreground">
-              Tire uma foto do balcão (de frente, boa luz). A IA detecta os itens e tenta <strong>recortar a foto de cada um</strong> — você confirma o que entra e quais recortes ficaram bons. Tudo entra como <strong>&ldquo;a verificar&rdquo;</strong>.
+              Tire/escolha a foto de cada produto. A IA reconhece o que é e põe a foto no produto certo — se for novo, ela cadastra. Você confere antes de salvar.
             </p>
 
-            {balcaoDetectados.length === 0 ? (
-              <label className="block border-2 border-dashed border-border rounded-xl p-8 text-center cursor-pointer hover:border-primary/40">
-                {balcaoLoading ? (
-                  <span className="inline-flex items-center gap-2 text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin" /> Analisando a foto...</span>
-                ) : (
-                  <span className="inline-flex items-center gap-2 text-primary font-medium"><Camera className="w-5 h-5" /> Escolher / tirar foto</span>
-                )}
-                <input
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  className="hidden"
-                  disabled={balcaoLoading}
-                  onChange={(e) => {
-                    const f = e.target.files?.[0]
-                    if (f) analisarBalcao(f)
-                  }}
-                />
-              </label>
-            ) : (
+            <label className="block border-2 border-dashed border-border rounded-xl p-5 text-center cursor-pointer hover:border-primary/40">
+              <span className="inline-flex items-center gap-2 text-primary font-medium"><Camera className="w-5 h-5" /> Adicionar fotos</span>
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  const fs = Array.from(e.target.files || [])
+                  if (fs.length) adicionarFotos(fs)
+                  e.target.value = ''
+                }}
+              />
+            </label>
+
+            {fotos.length > 0 && (
               <>
-                <p className="text-sm font-medium">{balcaoDetectados.length} itens detectados — confirme e escolha os recortes bons:</p>
                 <div className="max-h-72 overflow-y-auto border border-border rounded-xl divide-y divide-border">
-                  {balcaoDetectados.map((d) => {
-                    const crop = balcaoCrops[d.produto_id]
-                    return (
-                      <div key={d.produto_id} className="flex items-center gap-2.5 px-3 py-2 hover:bg-secondary/50">
+                  {fotos.map((f) => (
+                    <div key={f.key} className="flex items-center gap-2.5 px-3 py-2">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={f.dataUrl} alt="" className="w-12 h-12 rounded object-cover flex-shrink-0" />
+                      {f.status === 'analisando' ? (
+                        <span className="flex-1 text-sm text-muted-foreground inline-flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> reconhecendo...</span>
+                      ) : f.status === 'erro' ? (
                         <input
-                          type="checkbox"
-                          checked={balcaoSel.has(d.produto_id)}
-                          onChange={(e) =>
-                            setBalcaoSel((prev) => {
-                              const n = new Set(prev)
-                              if (e.target.checked) n.add(d.produto_id)
-                              else n.delete(d.produto_id)
-                              return n
-                            })
-                          }
-                          className="w-4 h-4"
-                          title="Incluir no cardápio"
+                          value={f.nome}
+                          onChange={(e) => atualizaFoto(f.key, { nome: e.target.value, status: 'ok' })}
+                          placeholder="não reconheci — digite o nome"
+                          className="flex-1 border border-border rounded px-2 py-1 text-sm bg-card"
                         />
-                        {crop ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={crop} alt="" className={`w-11 h-11 rounded object-cover border-2 ${balcaoUsarFoto.has(d.produto_id) ? 'border-primary' : 'border-transparent opacity-50'}`} />
-                        ) : (
-                          <span className="w-11 h-11 rounded bg-secondary/60 flex items-center justify-center text-[9px] text-muted-foreground text-center leading-tight">sem recorte</span>
-                        )}
-                        <span className="flex-1 text-sm">{d.nome}</span>
-                        {crop && (
-                          <button
-                            type="button"
-                            onClick={() => toggleUsarFoto(d.produto_id)}
-                            className={`text-xs rounded-full px-2.5 py-1 border whitespace-nowrap ${balcaoUsarFoto.has(d.produto_id) ? 'bg-primary/10 text-primary border-primary/30' : 'text-muted-foreground border-border'}`}
-                          >
-                            {balcaoUsarFoto.has(d.produto_id) ? 'foto ✓' : 'usar foto'}
-                          </button>
-                        )}
-                      </div>
-                    )
-                  })}
+                      ) : (
+                        <div className="flex-1 min-w-0">
+                          <input value={f.nome} onChange={(e) => atualizaFoto(f.key, { nome: e.target.value })} className="w-full border border-border rounded px-2 py-1 text-sm bg-card" />
+                          <div className="flex items-center gap-1.5 mt-1">
+                            <select value={f.categoria} onChange={(e) => atualizaFoto(f.key, { categoria: e.target.value })} className="border border-border rounded px-1.5 py-0.5 text-xs bg-card">
+                              {CATEGORIAS.map((c) => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                            <span className={`text-[10px] font-bold rounded-full px-1.5 py-0.5 ${f.produto_id == null ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>
+                              {f.produto_id == null ? 'novo' : 'já existe'}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                      <button type="button" onClick={() => removerFoto(f.key)} className="text-muted-foreground hover:text-destructive flex-shrink-0"><X className="w-4 h-4" /></button>
+                    </div>
+                  ))}
                 </div>
                 <div className="flex items-center gap-2">
                   <label className="text-sm text-muted-foreground">Qtd. cada</label>
                   <input type="number" min={0} value={balcaoQtd} onChange={(e) => setBalcaoQtd(e.target.value)} className="w-20 border rounded-lg px-2 py-1.5 bg-card text-sm" />
                 </div>
-                <div className="flex gap-3 pt-1">
-                  <button type="button" onClick={() => { setBalcaoDetectados([]); setBalcaoCrops({}) }} className="flex-1 border border-border rounded-xl py-3 font-medium">Outra foto</button>
-                  <button type="button" onClick={ativarDetectados} disabled={balcaoLoading} className="flex-1 bg-primary text-primary-foreground rounded-xl py-3 font-medium disabled:opacity-50">
-                    {balcaoLoading ? 'Ativando...' : 'Ativar (a verificar)'}
-                  </button>
-                </div>
+                <button type="button" onClick={confirmarFotos} disabled={balcaoLoading} className="w-full bg-primary text-primary-foreground rounded-xl py-3 font-semibold disabled:opacity-50">
+                  {balcaoLoading ? 'Adicionando...' : 'Adicionar ao dia (a verificar)'}
+                </button>
               </>
             )}
           </div>
