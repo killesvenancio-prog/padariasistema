@@ -126,21 +126,21 @@ function montarComandaHTML(pd: PedidoAdmin): string {
   <style>
     @page { margin: 6mm; }
     * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    body { font-family: Arial, Helvetica, sans-serif; width: 280px; margin: 0 auto; padding: 4px; color: #000; }
+    body { font-family: Arial, Helvetica, sans-serif; width: 280px; margin: 0 auto; padding: 4px; color: #000; font-weight: 700; }
     .top { text-align: center; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 10px; }
-    .marca { font-size: 17px; font-weight: 800; letter-spacing: .3px; }
+    .marca { font-size: 19px; font-weight: 900; letter-spacing: .3px; }
     .tag { font-size: 10px; letter-spacing: 2.5px; text-transform: uppercase; margin-top: 3px; }
     .head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
-    .num { font-size: 24px; font-weight: 800; line-height: 1; }
-    .hora { font-size: 12px; }
-    .dest { text-align: center; font-size: 16px; font-weight: 800; border: 2px solid #000; border-radius: 8px; padding: 7px; margin-bottom: 8px; }
-    .info { font-size: 12px; margin: 3px 0; }
+    .num { font-size: 27px; font-weight: 900; line-height: 1; }
+    .hora { font-size: 13px; font-weight: 700; }
+    .dest { text-align: center; font-size: 18px; font-weight: 900; border: 3px solid #000; border-radius: 8px; padding: 8px; margin-bottom: 8px; }
+    .info { font-size: 14px; font-weight: 700; margin: 3px 0; }
     .itens { margin: 10px 0; }
-    .it { display: flex; gap: 8px; align-items: flex-start; padding: 6px 0; border-bottom: 1px dashed #bbb; }
-    .chk { width: 15px; height: 15px; border: 2px solid #000; border-radius: 3px; flex-shrink: 0; margin-top: 1px; }
-    .q { font-weight: 800; font-size: 14px; min-width: 46px; }
-    .nm { font-size: 14px; flex: 1; }
-    .pesar { font-size: 11px; font-weight: normal; }
+    .it { display: flex; gap: 8px; align-items: flex-start; padding: 7px 0; border-bottom: 2px dashed #000; }
+    .chk { width: 16px; height: 16px; border: 2.5px solid #000; border-radius: 3px; flex-shrink: 0; margin-top: 1px; }
+    .q { font-weight: 900; font-size: 15px; min-width: 48px; }
+    .nm { font-size: 15px; font-weight: 800; flex: 1; }
+    .pesar { font-size: 12px; font-weight: 700; }
     .aviso { text-align: center; font-size: 11px; font-style: italic; border-top: 2px solid #000; padding-top: 8px; margin-top: 8px; }
     .obs { font-size: 12px; margin-top: 10px; border: 1px dashed #000; border-radius: 6px; padding: 7px; }
     .obs b { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 3px; }
