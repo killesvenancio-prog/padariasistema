@@ -13,7 +13,7 @@ import { ChatWidget } from './ChatWidget'
 import { ChatPanel } from './ChatPanel'
 import { BackToTop } from './BackToTop'
 import { slugCategoria, iconeCategoria } from '@/lib/categorias'
-import { MapPin, Clock, Camera, Store, Bot, AlertCircle, PackageOpen, Croissant, Heart, ShoppingBag, Search, X, ClipboardList, SearchX } from 'lucide-react'
+import { MapPin, Clock, Camera, Store, Bot, AlertCircle, PackageOpen, Croissant, Heart, ShoppingBag, Search, X, ClipboardList, SearchX, Lock } from 'lucide-react'
 
 const categoriasOrdem = ['Pães', 'Confeitaria', 'Doces', 'Doces coloniais', 'Chocolates', 'Salgados', 'Salgadinhos', 'Congelados', 'Mercearia', 'Bebidas', 'Vinhos', 'Cigarros']
 
@@ -330,6 +330,9 @@ export function MenuPage() {
           <div className="max-w-7xl mx-auto px-5 py-4 text-[12px] text-white/55 flex flex-col sm:flex-row gap-1.5 sm:items-center sm:justify-between">
             <span>© 2026 Padaria Santa Cecília</span>
             <span className="flex items-center gap-1.5">Feito com <Heart className="w-3.5 h-3.5 fill-current text-accent" /> e fermento natural</span>
+            <Link href="/admin" className="inline-flex items-center gap-1.5 text-white/40 hover:text-white transition-colors">
+              <Lock className="w-3 h-3" /> Painel do dono
+            </Link>
           </div>
         </div>
       </footer>
