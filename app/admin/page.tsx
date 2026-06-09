@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback, memo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/components/Toast'
 import { formatarQuantidade } from '@/lib/format'
-import { comprimirImagem, tipoDaImagem } from '@/lib/imagem'
+import { comprimirImagem, tipoDaImagem, recortarImagem } from '@/lib/imagem'
 import { listarModelos, salvarModelo, removerModelo, type ModeloCardapio } from '@/lib/modelosCardapio'
 import {
   LayoutDashboard, ClipboardList, CalendarDays, Package, Store, Lock, ImageIcon,
@@ -264,8 +264,10 @@ export default function AdminPage() {
   // Foto do balcão (detecção por IA)
   const [balcaoAberto, setBalcaoAberto] = useState(false)
   const [balcaoLoading, setBalcaoLoading] = useState(false)
-  const [balcaoDetectados, setBalcaoDetectados] = useState<{ produto_id: number; nome: string }[]>([])
+  const [balcaoDetectados, setBalcaoDetectados] = useState<{ produto_id: number; nome: string; box?: number[] | null }[]>([])
+  const [balcaoCrops, setBalcaoCrops] = useState<Record<number, string>>({})
   const [balcaoSel, setBalcaoSel] = useState<Set<number>>(new Set())
+  const [balcaoUsarFoto, setBalcaoUsarFoto] = useState<Set<number>>(new Set())
   const [balcaoQtd, setBalcaoQtd] = useState('10')
 
   const [form, setForm] = useState(formVazio)
@@ -338,6 +340,7 @@ export default function AdminPage() {
   async function analisarBalcao(file: File) {
     setBalcaoLoading(true)
     setBalcaoDetectados([])
+    setBalcaoCrops({})
     try {
       const otimizada = await comprimirImagem(file, 1100, 0.8)
       const dataUrl: string = await new Promise((resolve, reject) => {
@@ -351,17 +354,36 @@ export default function AdminPage() {
         setMsg(data?.erro || 'Não consegui analisar a foto. Publicou a função "balcao"?')
         return
       }
-      const det = (data.itens || []) as { produto_id: number; nome: string }[]
+      const det = (data.itens || []) as { produto_id: number; nome: string; box?: number[] | null }[]
       if (det.length === 0) {
         setMsg('Não reconheci itens do catálogo nessa foto. Tente outra, mais de frente.')
       }
+      // Recorta cada item pelo box (quando houver) pra você aprovar.
+      const crops: Record<number, string> = {}
+      for (const d of det) {
+        if (d.box) {
+          const c = await recortarImagem(dataUrl, d.box)
+          if (c) crops[d.produto_id] = c
+        }
+      }
+      setBalcaoCrops(crops)
       setBalcaoDetectados(det)
       setBalcaoSel(new Set(det.map((d) => d.produto_id)))
+      setBalcaoUsarFoto(new Set(Object.keys(crops).map(Number)))
     } catch {
       setMsg('Erro ao processar a foto.')
     } finally {
       setBalcaoLoading(false)
     }
+  }
+
+  function toggleUsarFoto(id: number) {
+    setBalcaoUsarFoto((prev) => {
+      const n = new Set(prev)
+      if (n.has(id)) n.delete(id)
+      else n.add(id)
+      return n
+    })
   }
 
   // Liga os itens confirmados, marcados como "a verificar".
@@ -375,10 +397,27 @@ export default function AdminPage() {
     setBalcaoLoading(true)
     await Promise.all(escolhidos.map((d) => supabase.rpc('ligar_item_hoje', { p_produto_id: d.produto_id, p_quantidade: qtd })))
     await Promise.all(escolhidos.map((d) => supabase.from('produtos').update({ a_verificar: true }).eq('id', d.produto_id)))
+    // Sobe os recortes aprovados como foto do produto.
+    const comFoto = escolhidos.filter((d) => balcaoUsarFoto.has(d.produto_id) && balcaoCrops[d.produto_id])
+    await Promise.all(
+      comFoto.map(async (d) => {
+        try {
+          const blob = await (await fetch(balcaoCrops[d.produto_id])).blob()
+          const path = `produto-${Date.now()}-${d.produto_id}.jpg`
+          const { error } = await supabase.storage.from('produtos').upload(path, blob, { upsert: true, cacheControl: '3600', contentType: 'image/jpeg' })
+          if (error) return
+          const { data } = supabase.storage.from('produtos').getPublicUrl(path)
+          await supabase.from('produtos').update({ foto_url: data.publicUrl }).eq('id', d.produto_id)
+        } catch {
+          /* ignora recorte que falhou */
+        }
+      }),
+    )
     setBalcaoLoading(false)
     setBalcaoAberto(false)
     setBalcaoDetectados([])
-    setMsg(`${escolhidos.length} ${escolhidos.length === 1 ? 'item ligado' : 'itens ligados'} (a verificar).`)
+    setBalcaoCrops({})
+    setMsg(`${escolhidos.length} ${escolhidos.length === 1 ? 'item ligado' : 'itens ligados'} (a verificar)${comFoto.length ? ` · ${comFoto.length} com foto` : ''}.`)
     await carregarItens()
     await carregarProdutos()
   }
@@ -1538,7 +1577,7 @@ export default function AdminPage() {
               <button type="button" onClick={() => setBalcaoAberto(false)} className="text-muted-foreground text-xl">✕</button>
             </div>
             <p className="text-sm text-muted-foreground">
-              Tire uma foto do balcão (de frente, boa luz). A IA detecta os itens; você confirma e eles entram no cardápio marcados como <strong>&ldquo;a verificar&rdquo;</strong>.
+              Tire uma foto do balcão (de frente, boa luz). A IA detecta os itens e tenta <strong>recortar a foto de cada um</strong> — você confirma o que entra e quais recortes ficaram bons. Tudo entra como <strong>&ldquo;a verificar&rdquo;</strong>.
             </p>
 
             {balcaoDetectados.length === 0 ? (
@@ -1562,33 +1601,52 @@ export default function AdminPage() {
               </label>
             ) : (
               <>
-                <p className="text-sm font-medium">{balcaoDetectados.length} itens detectados — confirme o que vai ligar:</p>
-                <div className="max-h-64 overflow-y-auto border border-border rounded-xl divide-y divide-border">
-                  {balcaoDetectados.map((d) => (
-                    <label key={d.produto_id} className="flex items-center gap-2.5 px-3 py-2 text-sm cursor-pointer hover:bg-secondary/50">
-                      <input
-                        type="checkbox"
-                        checked={balcaoSel.has(d.produto_id)}
-                        onChange={(e) =>
-                          setBalcaoSel((prev) => {
-                            const n = new Set(prev)
-                            if (e.target.checked) n.add(d.produto_id)
-                            else n.delete(d.produto_id)
-                            return n
-                          })
-                        }
-                        className="w-4 h-4"
-                      />
-                      {d.nome}
-                    </label>
-                  ))}
+                <p className="text-sm font-medium">{balcaoDetectados.length} itens detectados — confirme e escolha os recortes bons:</p>
+                <div className="max-h-72 overflow-y-auto border border-border rounded-xl divide-y divide-border">
+                  {balcaoDetectados.map((d) => {
+                    const crop = balcaoCrops[d.produto_id]
+                    return (
+                      <div key={d.produto_id} className="flex items-center gap-2.5 px-3 py-2 hover:bg-secondary/50">
+                        <input
+                          type="checkbox"
+                          checked={balcaoSel.has(d.produto_id)}
+                          onChange={(e) =>
+                            setBalcaoSel((prev) => {
+                              const n = new Set(prev)
+                              if (e.target.checked) n.add(d.produto_id)
+                              else n.delete(d.produto_id)
+                              return n
+                            })
+                          }
+                          className="w-4 h-4"
+                          title="Incluir no cardápio"
+                        />
+                        {crop ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={crop} alt="" className={`w-11 h-11 rounded object-cover border-2 ${balcaoUsarFoto.has(d.produto_id) ? 'border-primary' : 'border-transparent opacity-50'}`} />
+                        ) : (
+                          <span className="w-11 h-11 rounded bg-secondary/60 flex items-center justify-center text-[9px] text-muted-foreground text-center leading-tight">sem recorte</span>
+                        )}
+                        <span className="flex-1 text-sm">{d.nome}</span>
+                        {crop && (
+                          <button
+                            type="button"
+                            onClick={() => toggleUsarFoto(d.produto_id)}
+                            className={`text-xs rounded-full px-2.5 py-1 border whitespace-nowrap ${balcaoUsarFoto.has(d.produto_id) ? 'bg-primary/10 text-primary border-primary/30' : 'text-muted-foreground border-border'}`}
+                          >
+                            {balcaoUsarFoto.has(d.produto_id) ? 'foto ✓' : 'usar foto'}
+                          </button>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
                 <div className="flex items-center gap-2">
                   <label className="text-sm text-muted-foreground">Qtd. cada</label>
                   <input type="number" min={0} value={balcaoQtd} onChange={(e) => setBalcaoQtd(e.target.value)} className="w-20 border rounded-lg px-2 py-1.5 bg-card text-sm" />
                 </div>
                 <div className="flex gap-3 pt-1">
-                  <button type="button" onClick={() => setBalcaoDetectados([])} className="flex-1 border border-border rounded-xl py-3 font-medium">Outra foto</button>
+                  <button type="button" onClick={() => { setBalcaoDetectados([]); setBalcaoCrops({}) }} className="flex-1 border border-border rounded-xl py-3 font-medium">Outra foto</button>
                   <button type="button" onClick={ativarDetectados} disabled={balcaoLoading} className="flex-1 bg-primary text-primary-foreground rounded-xl py-3 font-medium disabled:opacity-50">
                     {balcaoLoading ? 'Ativando...' : 'Ativar (a verificar)'}
                   </button>
