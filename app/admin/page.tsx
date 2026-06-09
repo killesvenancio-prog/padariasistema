@@ -115,36 +115,53 @@ function tocarBeep() {
 function montarComandaHTML(pd: PedidoAdmin): string {
   const esc = (s: unknown) => String(s ?? '').replace(/[<>&]/g, (c) => (c === '<' ? '&lt;' : c === '>' ? '&gt;' : '&amp;'))
   const hora = new Date(pd.created_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
-  const dest = pd.modo === 'mesa' ? `MESA ${pd.mesa_numero ?? ''}` : pd.modo === 'entrega' ? 'ENTREGA' : 'RETIRADA NO BALCAO'
+  const dest = pd.modo === 'mesa' ? `MESA ${pd.mesa_numero ?? ''}` : pd.modo === 'entrega' ? 'ENTREGA' : 'RETIRADA NO BALCÃO'
   const itens = pd.itens
-    .map((it) => `<div class="it">${formatarQuantidade(Number(it.quantidade), it.modo)} &mdash; ${esc(it.nome)}${it.modo === 'un' && it.unidade === 'kg' ? ' (a pesar)' : ''}</div>`)
+    .map((it) => {
+      const pesar = it.modo === 'un' && it.unidade === 'kg' ? ' <span class="pesar">(a pesar)</span>' : ''
+      return `<div class="it"><span class="chk"></span><span class="q">${formatarQuantidade(Number(it.quantidade), it.modo)}</span><span class="nm">${esc(it.nome)}${pesar}</span></div>`
+    })
     .join('')
   return `<!doctype html><html><head><meta charset="utf-8"><title>Comanda #${pd.id}</title>
   <style>
-    *{font-family:'Courier New',monospace;-webkit-print-color-adjust:exact;}
-    body{width:280px;margin:0 auto;padding:12px;color:#000;}
-    h1{font-size:15px;text-align:center;margin:0;}
-    .sub{text-align:center;font-size:11px;margin:2px 0 8px;}
-    .row{font-size:12px;margin:2px 0;}
-    .dest{font-size:14px;font-weight:bold;margin:4px 0;}
-    hr{border:none;border-top:1px dashed #000;margin:8px 0;}
-    .it{font-size:13px;margin:4px 0;}
-    .tot{font-size:15px;font-weight:bold;margin-top:8px;}
-    .obs{font-size:12px;margin-top:6px;border:1px solid #000;padding:4px;}
+    @page { margin: 6mm; }
+    * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    body { font-family: Arial, Helvetica, sans-serif; width: 280px; margin: 0 auto; padding: 4px; color: #000; }
+    .top { text-align: center; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 10px; }
+    .marca { font-size: 17px; font-weight: 800; letter-spacing: .3px; }
+    .tag { font-size: 10px; letter-spacing: 2.5px; text-transform: uppercase; margin-top: 3px; }
+    .head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+    .num { font-size: 24px; font-weight: 800; line-height: 1; }
+    .hora { font-size: 12px; }
+    .dest { text-align: center; font-size: 16px; font-weight: 800; border: 2px solid #000; border-radius: 8px; padding: 7px; margin-bottom: 8px; }
+    .info { font-size: 12px; margin: 3px 0; }
+    .itens { margin: 10px 0; }
+    .it { display: flex; gap: 8px; align-items: flex-start; padding: 6px 0; border-bottom: 1px dashed #bbb; }
+    .chk { width: 15px; height: 15px; border: 2px solid #000; border-radius: 3px; flex-shrink: 0; margin-top: 1px; }
+    .q { font-weight: 800; font-size: 14px; min-width: 46px; }
+    .nm { font-size: 14px; flex: 1; }
+    .pesar { font-size: 11px; font-weight: normal; }
+    .tot { display: flex; justify-content: space-between; font-size: 17px; font-weight: 800; border-top: 2px solid #000; padding-top: 8px; }
+    .obs { font-size: 12px; margin-top: 10px; border: 1px dashed #000; border-radius: 6px; padding: 7px; }
+    .obs b { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 3px; }
+    .foot { text-align: center; font-size: 11px; margin-top: 14px; }
   </style></head><body>
-    <h1>PADARIA SANTA CECILIA</h1>
-    <div class="sub">COMANDA &middot; Pedido #${pd.id}</div>
-    <div class="row">${hora}</div>
+    <div class="top">
+      <div class="marca">PADARIA SANTA CECÍLIA</div>
+      <div class="tag">Comanda da cozinha</div>
+    </div>
+    <div class="head">
+      <span class="num">#${pd.id}</span>
+      <span class="hora">${hora}</span>
+    </div>
     <div class="dest">${dest}</div>
-    ${pd.modo === 'entrega' && pd.endereco ? `<div class="row">${esc(pd.endereco)}</div>` : ''}
-    ${pd.cliente_nome ? `<div class="row">Cliente: ${esc(pd.cliente_nome)}</div>` : ''}
-    ${pd.cliente_telefone ? `<div class="row">Tel: ${esc(pd.cliente_telefone)}</div>` : ''}
-    <hr/>
-    ${itens}
-    <hr/>
-    <div class="tot">TOTAL: R$ ${Number(pd.total).toFixed(2)}</div>
-    ${pd.observacao ? `<div class="obs">Obs: ${esc(pd.observacao)}</div>` : ''}
-    <div class="sub" style="margin-top:14px;">. . .</div>
+    ${pd.modo === 'entrega' && pd.endereco ? `<div class="info">Endereço: ${esc(pd.endereco)}</div>` : ''}
+    ${pd.cliente_nome ? `<div class="info">Cliente: <b>${esc(pd.cliente_nome)}</b></div>` : ''}
+    ${pd.cliente_telefone ? `<div class="info">Tel: ${esc(pd.cliente_telefone)}</div>` : ''}
+    <div class="itens">${itens}</div>
+    <div class="tot"><span>TOTAL</span><span>R$ ${Number(pd.total).toFixed(2)}</span></div>
+    ${pd.observacao ? `<div class="obs"><b>Observação</b>${esc(pd.observacao)}</div>` : ''}
+    <div class="foot">Pedido #${pd.id} &middot; obrigado!</div>
   </body></html>`
 }
 
